@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { EventsAPI } from '../../services/api'
-import Table from '../../components/Table'
+import Table, { StatusBadge } from '../../components/Table'
+import { SkeletonTable } from '../../components/Loading'
+import Button from '../../components/Button'
+import Icon from '../../components/Icon'
+import { StatsGrid } from '../../components/StatsCard'
 
 export default function Violations() {
   const [rows, setRows] = useState([])
@@ -20,11 +24,13 @@ export default function Violations() {
         // Normalize to UI-friendly shape expected by the table
         const normalized = list.map((v) => ({
           id: v.id,
-          employee: v.employee_name || (v.employee_id != null ? `#${v.employee_id}` : '-'),
-          camera: v.camera_name || (v.camera_id != null ? `#${v.camera_id}` : '-'),
-          date: v.created_at ? new Date(v.created_at).toISOString().slice(0, 10) : '-',
-          type: v.violation_type || '-',
-          desc: v.description || '-',
+          employee: v.employee_name || v.employee || (v.employee_id != null ? `#${v.employee_id}` : '-'),
+          camera: v.camera_name || v.camera || (v.camera_id != null ? `#${v.camera_id}` : '-'),
+          date: v.created_at ? new Date(v.created_at).toLocaleDateString() : v.date || '-',
+          type: v.violation_type || v.desc || '-',
+          desc: v.description || v.desc || '-',
+          severity: v.severity || 'medium',
+          status: v.status || 'unresolved'
         }))
         setRows(normalized)
       } catch (e) {
@@ -44,26 +50,223 @@ export default function Violations() {
     return (!employee || emp.includes(empQ)) && (!camera || cam.includes(camQ)) && (!date || r.date === date)
   }), [rows, employee, camera, date])
 
+  const clearFilters = () => {
+    setEmployee('')
+    setCamera('')
+    setDate('')
+  }
+
+  // Mock statistics
+  const stats = [
+    {
+      title: 'Total Violations',
+      value: rows.length.toString(),
+      change: '+3 this week',
+      changeType: 'negative',
+      icon: 'violations',
+      iconColor: 'text-warning-600'
+    },
+    {
+      title: 'Resolved Today',
+      value: '8',
+      change: '+2 from yesterday',
+      changeType: 'positive',
+      icon: 'check',
+      iconColor: 'text-success-600'
+    },
+    {
+      title: 'Critical Violations',
+      value: '2',
+      change: 'Immediate attention',
+      changeType: 'negative',
+      icon: 'info',
+      iconColor: 'text-danger-600'
+    },
+    {
+      title: 'Average Resolution',
+      value: '4.2h',
+      change: '-30min improvement',
+      changeType: 'positive',
+      icon: 'clock',
+      iconColor: 'text-primary-600'
+    }
+  ]
+
+  const columns = [
+    { 
+      header: 'Employee', 
+      accessor: 'employee',
+      icon: 'person',
+      cell: (row) => (
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-warning-100 rounded-full flex items-center justify-center">
+            <Icon name="person" className="w-5 h-5 text-warning-600" />
+          </div>
+          <span className="font-medium">{row.employee}</span>
+        </div>
+      )
+    },
+    { 
+      header: 'Camera', 
+      accessor: 'camera',
+      icon: 'cameras',
+      cell: (row) => (
+        <div className="flex items-center gap-2">
+          <Icon name="cameras" className="w-4 h-4 text-neutral-400" />
+          {row.camera}
+        </div>
+      )
+    },
+    { 
+      header: 'Date', 
+      accessor: 'date',
+      icon: 'calendar'
+    },
+    { 
+      header: 'Violation Type', 
+      accessor: 'type',
+      cell: (row) => (
+        <span className="badge-warning">{row.type}</span>
+      )
+    },
+    { 
+      header: 'Status', 
+      accessor: 'status',
+      cell: (row) => (
+        <StatusBadge status={row.status} />
+      )
+    }
+  ]
+
+  const actions = [
+    {
+      icon: 'view',
+      title: 'View Details',
+      onClick: (row) => console.log('View violation:', row),
+      className: 'text-primary-600 hover:text-primary-700'
+    },
+    {
+      icon: 'check',
+      title: 'Resolve Violation',
+      onClick: (row) => console.log('Resolve violation:', row),
+      className: 'text-success-600 hover:text-success-700'
+    }
+  ]
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">PPE Violations</h1>
-      <div className="card p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <input className="input" placeholder="Filter by employee" value={employee} onChange={(e) => setEmployee(e.target.value)} />
-        <input className="input" placeholder="Filter by camera" value={camera} onChange={(e) => setCamera(e.target.value)} />
-        <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <button className="btn btn-secondary" onClick={() => { setEmployee(''); setCamera(''); setDate('') }}>Clear</button>
+    <div className="space-y-6 animate-fade-in-custom">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-neutral-900 flex items-center gap-3">
+            <Icon name="violations" className="w-8 h-8 text-warning-600" />
+            PPE Violations
+          </h1>
+          <p className="text-neutral-600 mt-1">
+            Monitor and manage personal protective equipment violations
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="secondary" icon="document" size="sm">
+            Export Report
+          </Button>
+          <Button variant="primary" icon="add">
+            Create Alert
+          </Button>
+        </div>
       </div>
-      {error && <div className="card p-6 text-red-600">{error}</div>}
-      {loading ? <div className="card p-6">Loading...</div> : (
+
+      {/* Statistics */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="stat-card">
+              <div className="skeleton-text w-16 mb-2" />
+              <div className="skeleton-title w-20 mb-3" />
+              <div className="skeleton-text w-12" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <StatsGrid stats={stats} />
+      )}
+
+      {/* Filters */}
+      <div className="card p-6">
+        <h3 className="text-lg font-semibold text-neutral-900 mb-4 flex items-center gap-2">
+          <Icon name="search" className="w-5 h-5 text-primary-600" />
+          Filter Violations
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Icon name="person" className="w-5 h-5 text-neutral-400" />
+            </div>
+            <input 
+              className="input pl-10" 
+              placeholder="Filter by employee" 
+              value={employee} 
+              onChange={(e) => setEmployee(e.target.value)} 
+            />
+          </div>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Icon name="cameras" className="w-5 h-5 text-neutral-400" />
+            </div>
+            <input 
+              className="input pl-10" 
+              placeholder="Filter by camera" 
+              value={camera} 
+              onChange={(e) => setCamera(e.target.value)} 
+            />
+          </div>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Icon name="calendar" className="w-5 h-5 text-neutral-400" />
+            </div>
+            <input 
+              className="input pl-10" 
+              type="date" 
+              value={date} 
+              onChange={(e) => setDate(e.target.value)} 
+            />
+          </div>
+          <Button variant="secondary" onClick={clearFilters} icon="close">
+            Clear Filters
+          </Button>
+        </div>
+        {(employee || camera || date) && (
+          <div className="mt-4 flex items-center gap-2">
+            <span className="text-sm text-neutral-600">
+              Showing {filtered.length} of {rows.length} violations
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Error State */}
+      {error && (
+        <div className="card p-6">
+          <div className="flex items-center gap-3 text-danger-600">
+            <Icon name="info" className="w-5 h-5" />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Violations Table */}
+      {loading ? (
+        <SkeletonTable rows={10} cols={5} />
+      ) : (
         <Table
-          columns={[
-            { header: 'Employee', accessor: 'employee' },
-            { header: 'Camera', accessor: 'camera' },
-            { header: 'Date', accessor: 'date' },
-            { header: 'Type', accessor: 'type' },
-            { header: 'Description', accessor: 'desc' },
-          ]}
+          columns={columns}
           data={filtered}
+          actions={actions}
+          empty={
+            employee || camera || date ? 
+            `No violations found matching your filters` : 
+            'No violations found. This is great news for workplace safety!'
+          }
         />
       )}
     </div>

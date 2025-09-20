@@ -56,23 +56,7 @@ export function AuthProvider({ children }) {
       setLoading(true)
       setError(null)
       
-      // Demo mode - simulate login for UI demonstration
-      if (email && password === 'password') {
-        const demoUser = {
-          id: 1,
-          name: 'John Doe',
-          email: email,
-          role: { name: 'Admin' }
-        }
-        const demoToken = 'demo-token-' + Date.now()
-        
-        setToken(demoToken)
-        setUser(demoUser)
-        
-        return { token: demoToken, user: demoUser }
-      }
-      
-      // Original API call (will fail if backend not running)
+      // Call the real ISG API login endpoint
       const response = await AuthAPI.login(email, password)
       
       // Store tokens
