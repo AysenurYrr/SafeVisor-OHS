@@ -5,24 +5,44 @@ import Table from '../../components/Table'
 export default function Violations() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [employee, setEmployee] = useState('')
   const [camera, setCamera] = useState('')
   const [date, setDate] = useState('')
 
   useEffect(() => {
     (async () => {
-      setLoading(true)
-      const data = await EventsAPI.violations()
-      setRows(data)
-      setLoading(false)
+      try {
+        setError(null)
+        setLoading(true)
+        const resp = await EventsAPI.violations()
+        const list = Array.isArray(resp?.violations) ? resp.violations : Array.isArray(resp) ? resp : []
+        // Normalize to UI-friendly shape expected by the table
+        const normalized = list.map((v) => ({
+          id: v.id,
+          employee: v.employee_name || (v.employee_id != null ? `#${v.employee_id}` : '-'),
+          camera: v.camera_name || (v.camera_id != null ? `#${v.camera_id}` : '-'),
+          date: v.created_at ? new Date(v.created_at).toISOString().slice(0, 10) : '-',
+          type: v.violation_type || '-',
+          desc: v.description || '-',
+        }))
+        setRows(normalized)
+      } catch (e) {
+        console.error('Failed to load violations', e)
+        setError('Failed to load violations')
+      } finally {
+        setLoading(false)
+      }
     })()
   }, [])
 
-  const filtered = useMemo(() => rows.filter(r => (
-    (!employee || r.employee.toLowerCase().includes(employee.toLowerCase())) &&
-    (!camera || r.camera.toLowerCase().includes(camera.toLowerCase())) &&
-    (!date || r.date === date)
-  )), [rows, employee, camera, date])
+  const filtered = useMemo(() => rows.filter((r) => {
+    const emp = (r.employee || '').toLowerCase()
+    const cam = (r.camera || '').toLowerCase()
+    const empQ = employee.toLowerCase()
+    const camQ = camera.toLowerCase()
+    return (!employee || emp.includes(empQ)) && (!camera || cam.includes(camQ)) && (!date || r.date === date)
+  }), [rows, employee, camera, date])
 
   return (
     <div className="space-y-4">
@@ -33,6 +53,7 @@ export default function Violations() {
         <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         <button className="btn btn-secondary" onClick={() => { setEmployee(''); setCamera(''); setDate('') }}>Clear</button>
       </div>
+      {error && <div className="card p-6 text-red-600">{error}</div>}
       {loading ? <div className="card p-6">Loading...</div> : (
         <Table
           columns={[

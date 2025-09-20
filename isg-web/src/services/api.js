@@ -59,14 +59,12 @@ api.interceptors.response.use(
 // Authentication API
 export const AuthAPI = {
   async login(email, password) {
-    const formData = new FormData()
-    formData.append('username', email)
-    formData.append('password', password)
-    
-    const response = await api.post('/auth/login', formData, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      }
+    // Use x-www-form-urlencoded for OAuth2 password flow
+    const form = new URLSearchParams()
+    form.append('username', email)
+    form.append('password', password)
+    const response = await api.post('/auth/login', form, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
     return response.data
   },
@@ -82,7 +80,8 @@ export const AuthAPI = {
   },
 
   async refreshToken(refreshToken) {
-    const response = await api.post('/auth/refresh', { refresh_token: refreshToken })
+    // Backend expects refresh_token as a query parameter
+    const response = await api.post(`/auth/refresh?refresh_token=${encodeURIComponent(refreshToken)}`)
     return response.data
   }
 }
