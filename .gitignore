@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build output (web tooling)
+dist/
+dist-ssr/
+.vite/
+.build/
+build/
+
+# Logs
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Testing & coverage
+coverage/
+
+# Caches
+.cache/
+.parcel-cache/
+.eslintcache
+.turbo/
+
+# Editor & IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Misc
+*.pid
+*.seed
+*.pid.lock
