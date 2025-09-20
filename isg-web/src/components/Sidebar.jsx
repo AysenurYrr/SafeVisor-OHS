@@ -33,7 +33,12 @@ export default function Sidebar({ open }) {
   const isAdmin = user?.role === 'Admin (IT)'
 
   return (
-    <aside className={`bg-white border-r border-gray-200 ${open ? 'w-64' : 'w-16'} transition-all duration-300 hidden md:block shadow-sm`}>
+    <aside className={`
+      bg-white border-r border-gray-200 transition-all duration-300 shadow-sm z-50
+      ${open ? 'w-64' : 'w-16'} 
+      md:relative md:block
+      ${open ? 'fixed inset-y-0 left-0' : 'hidden md:block'}
+    `}>
       <div className={`h-14 border-b border-gray-200 flex items-center px-4 font-bold text-gray-800 ${!open ? 'justify-center' : ''}`}>
         {open ? (
           <>
