@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Development overrides for the API service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: isg-api
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://isg:devpass@db:5432/isgdb
+      - JWT_SECRET_KEY=your-super-secret-jwt-key-change-in-production
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    networks:
+      - isg-network
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Development database with exposed port
+  db:
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=isg
+      - POSTGRES_PASSWORD=devpass
+      - POSTGRES_DB=isgdb

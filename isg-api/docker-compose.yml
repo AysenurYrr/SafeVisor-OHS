@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  db:
+    image: postgres:16
+    container_name: isgdb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: isg
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: isgdb
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - isg-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U isg -d isgdb"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # pgAdmin 4 Service
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: isg-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@isg.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin-config:/pgadmin4/servers.json
+    networks:
+      - isg-network
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/misc/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+# Named volumes
+volumes:
+  pgadmin_data:
+    driver: local
+
+# Networks
+networks:
+  isg-network:
+    driver: bridge
+    name: isg-network

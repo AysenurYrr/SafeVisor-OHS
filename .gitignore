@@ -21,6 +21,8 @@ pnpm-debug.log*
 .env
 .env.local
 .env.*.local
+isg-web/.env*
+isg-api/.env
 
 # Testing & coverage
 coverage/
@@ -46,3 +48,18 @@ desktop.ini
 *.pid
 *.seed
 *.pid.lock
+
+# Python (backend)
+__pycache__/
+.pytest_cache/
+.coverage
+*.pyc
+*.pyo
+*.pyd
+venv/
+isg-api/venv/
+isg-api/isg.db
+isg-api/pgdata/
+isg-api/__pycache__/
+isg-api/.pytest_cache/
+isg-api/.coverage

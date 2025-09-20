@@ -1,14 +1,18 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { AuthAPI } from '../services/api'
 
 // Roles: Admin (IT), Manager, AssistantManager, HSEExpert
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('token'))
+  const [refreshToken, setRefreshToken] = useState(() => localStorage.getItem('refreshToken'))
   const [user, setUser] = useState(() => {
     const raw = localStorage.getItem('user')
     return raw ? JSON.parse(raw) : null
   })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     if (token) localStorage.setItem('token', token)
@@ -16,32 +20,109 @@ export function AuthProvider({ children }) {
   }, [token])
 
   useEffect(() => {
+    if (refreshToken) localStorage.setItem('refreshToken', refreshToken)
+    else localStorage.removeItem('refreshToken')
+  }, [refreshToken])
+
+  useEffect(() => {
     if (user) localStorage.setItem('user', JSON.stringify(user))
     else localStorage.removeItem('user')
   }, [user])
 
+  // Check if user is still authenticated on app load
+  useEffect(() => {
+    const initAuth = async () => {
+      if (token && !user) {
+        try {
+          setLoading(true)
+          const userData = await AuthAPI.getCurrentUser()
+          setUser(userData)
+        } catch (error) {
+          console.error('Failed to get current user:', error)
+          // Clear invalid token
+          setToken(null)
+          setRefreshToken(null)
+        } finally {
+          setLoading(false)
+        }
+      }
+    }
+
+    initAuth()
+  }, [token, user])
+
   const login = async ({ email, password }) => {
-    // Simulate API call and issue a dummy JWT
-    await new Promise(r => setTimeout(r, 400))
-    const dummyToken = 'dummy-jwt-token'
-    const role = email?.includes('admin') ? 'Admin (IT)' : email?.includes('manager') ? 'Manager' : email?.includes('assistant') ? 'AssistantManager' : 'HSEExpert'
-    const newUser = { email, name: email.split('@')[0] || 'User', role }
-    setToken(dummyToken)
-    setUser(newUser)
-    return { token: dummyToken, user: newUser }
+    try {
+      setLoading(true)
+      setError(null)
+      
+      // Call the real ISG API login endpoint
+      const response = await AuthAPI.login(email, password)
+      
+      // Store tokens
+      setToken(response.access_token)
+      setRefreshToken(response.refresh_token)
+      
+      // Get user info
+      const userData = await AuthAPI.getCurrentUser()
+      setUser(userData)
+      
+      return { token: response.access_token, user: userData }
+    } catch (error) {
+      console.error('Login failed:', error)
+      setError(error.response?.data?.detail || 'Login failed')
+      throw error
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const logout = () => {
-    setToken(null)
-    setUser(null)
+  const logout = async () => {
+    try {
+      if (token) {
+        await AuthAPI.logout()
+      }
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      setToken(null)
+      setRefreshToken(null)
+      setUser(null)
+      setError(null)
+    }
   }
 
   const hasRole = (roles) => {
     if (!roles || roles.length === 0) return true
-    return roles.includes(user?.role)
+    if (!user?.role?.name) return false
+    
+    // Map backend role names to frontend role names
+    const roleMapping = {
+      'Admin': 'Admin (IT)',
+      'Manager': 'Manager',
+      'AssistantManager': 'AssistantManager',
+      'HSEExpert': 'HSEExpert'
+    }
+    
+    const userRole = roleMapping[user.role.name] || user.role.name
+    return roles.includes(userRole)
   }
 
-  const value = useMemo(() => ({ token, user, login, logout, hasRole }), [token, user])
+  const clearError = () => setError(null)
+
+  const value = useMemo(() => ({ 
+    token, 
+    refreshToken,
+    user, 
+    loading,
+    error,
+    login, 
+    logout, 
+    hasRole,
+    clearError,
+    isAuthenticated: !!token && !!user
+  }), [token, refreshToken, user, loading, error])
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
