@@ -1,6 +1,34 @@
 import axios from 'axios'
 
-// ISG API configuration
+// Demo data for when backend is not available
+const DEMO_EMPLOYEES = [
+  { id: 1, first_name: 'John', last_name: 'Doe', email: 'john.doe@company.com', department: 'Manufacturing', position: 'Floor Supervisor', status: 'active', last_activity: '2 hours ago' },
+  { id: 2, first_name: 'Jane', last_name: 'Smith', email: 'jane.smith@company.com', department: 'Safety', position: 'HSE Officer', status: 'active', last_activity: '30 minutes ago' },
+  { id: 3, first_name: 'Mike', last_name: 'Johnson', email: 'mike.johnson@company.com', department: 'Manufacturing', position: 'Machine Operator', status: 'active', last_activity: '1 hour ago' },
+  { id: 4, first_name: 'Sarah', last_name: 'Williams', email: 'sarah.williams@company.com', department: 'Quality Control', position: 'Quality Inspector', status: 'active', last_activity: '3 hours ago' },
+  { id: 5, first_name: 'David', last_name: 'Brown', email: 'david.brown@company.com', department: 'Maintenance', position: 'Maintenance Tech', status: 'inactive', last_activity: '1 day ago' },
+]
+
+const DEMO_VIOLATIONS = [
+  { id: 1, employee: 'John Doe', camera: 'Camera 01 - Main Floor', date: '2025-01-14 09:30', desc: 'Missing Hard Hat' },
+  { id: 2, employee: 'Mike Johnson', camera: 'Camera 03 - Assembly Line', date: '2025-01-14 08:15', desc: 'No Safety Glasses' },
+  { id: 3, employee: 'Sarah Williams', camera: 'Camera 02 - QC Station', date: '2025-01-13 15:45', desc: 'Improper Gloves' },
+  { id: 4, employee: 'David Brown', camera: 'Camera 04 - Maintenance Area', date: '2025-01-13 11:20', desc: 'Missing Safety Vest' },
+  { id: 5, employee: 'Jane Smith', camera: 'Camera 01 - Main Floor', date: '2025-01-12 14:10', desc: 'No Steel Toe Boots' },
+]
+
+const DEMO_POSE_ALERTS = [
+  { id: 1, employee: 'John Doe', camera: 'Camera 01 - Main Floor', date: '2025-01-14 10:15', alert: 'Improper Lifting Posture' },
+  { id: 2, employee: 'Mike Johnson', camera: 'Camera 03 - Assembly Line', date: '2025-01-14 09:30', alert: 'Repetitive Strain Risk' },
+  { id: 3, employee: 'Sarah Williams', camera: 'Camera 02 - QC Station', date: '2025-01-13 16:20', alert: 'Poor Ergonomic Position' },
+  { id: 4, employee: 'David Brown', camera: 'Camera 04 - Maintenance Area', date: '2025-01-13 12:45', alert: 'Awkward Body Position' },
+  { id: 5, employee: 'Jane Smith', camera: 'Camera 01 - Main Floor', date: '2025-01-12 13:30', alert: 'Excessive Bending' },
+]
+
+// Helper function to detect if backend is available
+const isDemoMode = () => {
+  return localStorage.getItem('token')?.startsWith('demo-token-')
+}
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 export const api = axios.create({ 
@@ -89,26 +117,53 @@ export const AuthAPI = {
 // Employees API
 export const EmployeesAPI = {
   async list(skip = 0, limit = 100) {
+    if (isDemoMode()) {
+      return { employees: DEMO_EMPLOYEES, total: DEMO_EMPLOYEES.length }
+    }
     const response = await api.get(`/api/v1/employees/?skip=${skip}&limit=${limit}`)
     return response.data
   },
 
   async get(id) {
+    if (isDemoMode()) {
+      return DEMO_EMPLOYEES.find(emp => emp.id === id)
+    }
     const response = await api.get(`/api/v1/employees/${id}`)
     return response.data
   },
 
   async create(employeeData) {
+    if (isDemoMode()) {
+      const newEmployee = { ...employeeData, id: Date.now() }
+      DEMO_EMPLOYEES.push(newEmployee)
+      return newEmployee
+    }
     const response = await api.post('/api/v1/employees/', employeeData)
     return response.data
   },
 
   async update(id, employeeData) {
+    if (isDemoMode()) {
+      const index = DEMO_EMPLOYEES.findIndex(emp => emp.id === id)
+      if (index !== -1) {
+        DEMO_EMPLOYEES[index] = { ...DEMO_EMPLOYEES[index], ...employeeData }
+        return DEMO_EMPLOYEES[index]
+      }
+      return null
+    }
     const response = await api.put(`/api/v1/employees/${id}`, employeeData)
     return response.data
   },
 
   async delete(id) {
+    if (isDemoMode()) {
+      const index = DEMO_EMPLOYEES.findIndex(emp => emp.id === id)
+      if (index !== -1) {
+        DEMO_EMPLOYEES.splice(index, 1)
+        return { success: true }
+      }
+      return { success: false }
+    }
     const response = await api.delete(`/api/v1/employees/${id}`)
     return response.data
   }
@@ -145,6 +200,9 @@ export const CamerasAPI = {
 // Events API
 export const EventsAPI = {
   async violations(skip = 0, limit = 100, employee_id = null, camera_id = null, start_date = null, end_date = null) {
+    if (isDemoMode()) {
+      return DEMO_VIOLATIONS
+    }
     let url = `/api/v1/violations/?skip=${skip}&limit=${limit}`
     if (employee_id) url += `&employee_id=${employee_id}`
     if (camera_id) url += `&camera_id=${camera_id}`
@@ -156,11 +214,17 @@ export const EventsAPI = {
   },
 
   async getViolation(id) {
+    if (isDemoMode()) {
+      return DEMO_VIOLATIONS.find(v => v.id === id)
+    }
     const response = await api.get(`/api/v1/violations/${id}`)
     return response.data
   },
 
   async acknowledgeViolation(id, acknowledgmentData) {
+    if (isDemoMode()) {
+      return { success: true }
+    }
     const response = await api.put(`/api/v1/violations/${id}`, {
       ...acknowledgmentData,
       is_acknowledged: true
@@ -169,11 +233,17 @@ export const EventsAPI = {
   },
 
   async getViolationStats() {
+    if (isDemoMode()) {
+      return { total: 23, this_week: 8, this_month: 35 }
+    }
     const response = await api.get('/api/v1/violations/stats/summary')
     return response.data
   },
 
   async pose(skip = 0, limit = 100, employee_id = null, start_date = null, end_date = null) {
+    if (isDemoMode()) {
+      return DEMO_POSE_ALERTS
+    }
     let url = `/api/v1/pose-alerts/?skip=${skip}&limit=${limit}`
     if (employee_id) url += `&employee_id=${employee_id}`
     if (start_date) url += `&start_date=${start_date}`
@@ -184,11 +254,17 @@ export const EventsAPI = {
   },
 
   async getPoseAlert(id) {
+    if (isDemoMode()) {
+      return DEMO_POSE_ALERTS.find(p => p.id === id)
+    }
     const response = await api.get(`/api/v1/pose-alerts/${id}`)
     return response.data
   },
 
   async acknowledgePoseAlert(id, acknowledgmentData) {
+    if (isDemoMode()) {
+      return { success: true }
+    }
     const response = await api.put(`/api/v1/pose-alerts/${id}`, {
       ...acknowledgmentData,
       is_acknowledged: true
