@@ -26,22 +26,95 @@ export default function Login() {
     }
   }
 
+  const demoUsers = [
+    { email: 'admin@isg.local', role: 'Admin (IT)' },
+    { email: 'manager@isg.local', role: 'Manager' },
+    { email: 'assistant@isg.local', role: 'Assistant Manager' },
+    { email: 'hse@isg.local', role: 'HSE Expert' },
+  ]
+
   return (
-    <div>
-      <h1 className="text-xl font-semibold mb-4">Login</h1>
-      <form onSubmit={onSubmit} className="space-y-4">
-        {error && <div className="text-red-600 text-sm">{error}</div>}
-        <div>
-          <label className="label">Email</label>
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+    <div className="max-w-md w-full space-y-6">
+      {/* Header */}
+      <div className="text-center">
+        <div className="flex justify-center mb-4">
+          <span className="text-6xl">🛡️</span>
         </div>
-        <div>
-          <label className="label">Password</label>
-          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <h1 className="text-3xl font-bold text-gray-900">SafeVisor</h1>
+        <p className="mt-2 text-gray-600">Occupational Health & Safety System</p>
+      </div>
+
+      {/* Login Form */}
+      <div className="card p-8">
+        <h2 className="text-xl font-semibold mb-6 text-center">Sign in to your account</h2>
+        
+        <form onSubmit={onSubmit} className="space-y-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+              {error}
+            </div>
+          )}
+          
+          <div>
+            <label className="label">Email address</label>
+            <input 
+              className="input" 
+              type="email" 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              required 
+              placeholder="Enter your email"
+            />
+          </div>
+          
+          <div>
+            <label className="label">Password</label>
+            <input 
+              className="input" 
+              type="password" 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              required 
+              placeholder="Enter your password"
+            />
+          </div>
+          
+          <button 
+            className="btn w-full justify-center py-3 text-base" 
+            type="submit" 
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <span className="animate-spin mr-2">⏳</span>
+                Signing in...
+              </>
+            ) : (
+              'Sign in'
+            )}
+          </button>
+        </form>
+      </div>
+
+      {/* Demo Users */}
+      <div className="card p-6 bg-blue-50 border-blue-200">
+        <h3 className="text-sm font-medium text-blue-900 mb-3">Demo Accounts</h3>
+        <div className="grid grid-cols-1 gap-2">
+          {demoUsers.map((user) => (
+            <button
+              key={user.email}
+              onClick={() => setEmail(user.email)}
+              className="text-left p-2 rounded-md hover:bg-blue-100 transition-colors text-sm"
+            >
+              <div className="font-medium text-blue-900">{user.email}</div>
+              <div className="text-blue-700">{user.role}</div>
+            </button>
+          ))}
         </div>
-        <button className="btn w-full" type="submit" disabled={loading}>{loading ? 'Signing in...' : 'Sign in'}</button>
-      </form>
-      <p className="text-xs text-gray-500 mt-3">Tip: Use emails like admin@, manager@, assistant@, hse@ to simulate roles.</p>
+        <p className="text-xs text-blue-700 mt-3">
+          Click any email above to auto-fill. Default password: "password"
+        </p>
+      </div>
     </div>
   )
 }
