@@ -1,0 +1,25 @@
+{
+    "Servers": {
+        "1": {
+            "Name": "ISG Database",
+            "Group": "Servers",
+            "Host": "db",
+            "Port": 5432,
+            "MaintenanceDB": "postgres",
+            "Username": "isg",
+            "Password": "devpass",
+            "SSLMode": "prefer",
+            "SSLCert": "<STORAGE_DIR>/.postgresql/postgresql.crt",
+            "SSLKey": "<STORAGE_DIR>/.postgresql/postgresql.key",
+            "SSLRootCert": "<STORAGE_DIR>/.postgresql/root.crt",
+            "SSLCrl": "<STORAGE_DIR>/.postgresql/root.crl",
+            "SSLCompression": 0,
+            "Timeout": 0,
+            "UseSSHTunnel": 0,
+            "TunnelHost": "",
+            "TunnelPort": "22",
+            "TunnelUsername": "",
+            "TunnelAuthentication": 0
+        }
+    }
+}
