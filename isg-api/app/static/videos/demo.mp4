@@ -1,0 +1,12 @@
+
+This is a demo video placeholder.
+In a real implementation, place your actual demo.mp4 file here.
+The file should be a valid MP4 video file compatible with HTML5 video players.
+
+For testing purposes, you can:
+1. Download a sample video from: https://sample-videos.com/
+2. Use any MP4 video file you have
+3. Create a simple video using ffmpeg or similar tools
+
+Example ffmpeg command to create a test video:
+ffmpeg -f lavfi -i testsrc=duration=10:size=320x240:rate=1 demo.mp4
