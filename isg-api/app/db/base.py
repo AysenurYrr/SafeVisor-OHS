@@ -8,6 +8,7 @@ from app.models.user import User  # noqa
 
 # Import dependent models
 from app.models.employee import Employee  # noqa
+from app.models.employee import EmployeePhoto  # noqa
 from app.models.camera import Camera  # noqa
 from app.models.detection import Detection  # noqa
 from app.models.violation import Violation  # noqa

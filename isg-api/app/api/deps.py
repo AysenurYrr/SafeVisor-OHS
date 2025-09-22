@@ -8,8 +8,8 @@ from app.db.session import SessionLocal
 from app.models.user import User
 from app.crud import user as crud_user
 
-# Security scheme
-security_scheme = HTTPBearer()
+# Security scheme without auto 403 on missing credentials
+security_scheme = HTTPBearer(auto_error=False)
 
 
 def get_db() -> Generator:
@@ -23,7 +23,7 @@ def get_db() -> Generator:
 
 def get_current_user(
     db: Session = Depends(get_db),
-    token: HTTPAuthorizationCredentials = Depends(security_scheme)
+    token: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)
 ) -> User:
     """Get current authenticated user"""
     credentials_exception = HTTPException(
@@ -32,6 +32,8 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     
+    if token is None:
+        raise credentials_exception
     try:
         payload = security.verify_token(token.credentials)
         if payload is None:
@@ -81,10 +83,17 @@ def check_user_role(required_roles: list[str]):
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_active_user)
     ) -> User:
-        # Get user's role name
-        user_role_name = current_user.role.name if current_user.role else None
-        
-        if user_role_name not in required_roles and not crud_user.is_superuser(current_user):
+        # Collect role names from single role and m2m roles, normalize to uppercase
+        names = set()
+        if current_user.role and current_user.role.name:
+            names.add(current_user.role.name.upper())
+        if getattr(current_user, "roles", None):
+            for r in current_user.roles:
+                if r and r.name:
+                    names.add(r.name.upper())
+        required_upper = [r.upper() for r in required_roles]
+
+        if not (set(required_upper) & names) and not crud_user.is_superuser(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Operation requires one of these roles: {', '.join(required_roles)}"
@@ -100,9 +109,15 @@ def check_admin_role(
     current_user: User = Depends(get_current_active_user)
 ) -> User:
     """Check if user has Admin role"""
-    user_role_name = current_user.role.name if current_user.role else None
+    names = set()
+    if current_user.role and current_user.role.name:
+        names.add(current_user.role.name.upper())
+    if getattr(current_user, "roles", None):
+        for r in current_user.roles:
+            if r and r.name:
+                names.add(r.name.upper())
     
-    if user_role_name != "Admin" and not crud_user.is_superuser(current_user):
+    if "ADMIN" not in names and not crud_user.is_superuser(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -116,10 +131,16 @@ def check_manager_or_admin_role(
     current_user: User = Depends(get_current_active_user)
 ) -> User:
     """Check if user has Manager or Admin role"""
-    user_role_name = current_user.role.name if current_user.role else None
+    names = set()
+    if current_user.role and current_user.role.name:
+        names.add(current_user.role.name.upper())
+    if getattr(current_user, "roles", None):
+        for r in current_user.roles:
+            if r and r.name:
+                names.add(r.name.upper())
     
-    allowed_roles = ["Admin", "Manager"]
-    if user_role_name not in allowed_roles and not crud_user.is_superuser(current_user):
+    allowed_roles = {"ADMIN", "MANAGER"}
+    if not (names & allowed_roles) and not crud_user.is_superuser(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Manager or Admin access required"
@@ -133,10 +154,16 @@ def check_hse_expert_access(
     current_user: User = Depends(get_current_active_user)
 ) -> User:
     """Check if user has HSE Expert, Manager, or Admin role"""
-    user_role_name = current_user.role.name if current_user.role else None
+    names = set()
+    if current_user.role and current_user.role.name:
+        names.add(current_user.role.name.upper())
+    if getattr(current_user, "roles", None):
+        for r in current_user.roles:
+            if r and r.name:
+                names.add(r.name.upper())
     
-    allowed_roles = ["Admin", "Manager", "HSEExpert"]
-    if user_role_name not in allowed_roles and not crud_user.is_superuser(current_user):
+    allowed_roles = {"ADMIN", "MANAGER", "HSE_EXPERT"}
+    if not (names & allowed_roles) and not crud_user.is_superuser(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="HSE Expert, Manager, or Admin access required"

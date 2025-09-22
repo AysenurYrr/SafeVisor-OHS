@@ -3,8 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.crud import user as crud_user
+from app.crud import audit as crud_audit
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
+from app.schemas.audit import AuditLogRead
+from app.models.role import Role
 
 router = APIRouter()
 
@@ -171,3 +174,55 @@ def delete_user(
         )
     
     return {"message": "User deleted successfully"}
+
+
+@router.post("/{user_id}/roles/{role_id}")
+def assign_role(
+    *,
+    db: Session = Depends(deps.get_db),
+    user_id: int,
+    role_id: int,
+    current_user: User = Depends(deps.check_admin_role),
+) -> dict:
+    user = crud_user.get_user(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    role = db.query(Role).filter(Role.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+    if role not in user.roles:
+        user.roles.append(role)
+        db.commit()
+    crud_audit.log_action(db, user_id=current_user.id, action="assign_role", target=f"user:{user_id}/role:{role_id}")
+    return {"message": "Role assigned"}
+
+
+@router.delete("/{user_id}/roles/{role_id}")
+def remove_role(
+    *,
+    db: Session = Depends(deps.get_db),
+    user_id: int,
+    role_id: int,
+    current_user: User = Depends(deps.check_admin_role),
+) -> dict:
+    user = crud_user.get_user(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    role = db.query(Role).filter(Role.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+    if role in user.roles:
+        user.roles.remove(role)
+        db.commit()
+    crud_audit.log_action(db, user_id=current_user.id, action="remove_role", target=f"user:{user_id}/role:{role_id}")
+    return {"message": "Role removed"}
+
+
+@router.get("/audit", response_model=List[AuditLogRead])
+def list_audit_logs(
+    db: Session = Depends(deps.get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=200),
+    current_user: User = Depends(deps.check_admin_role),
+):
+    return crud_audit.list_audit_logs(db, skip=skip, limit=limit)

@@ -60,7 +60,7 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refreshToken')
       if (refreshToken) {
         try {
-          const response = await api.post('/auth/refresh', { refresh_token: refreshToken })
+          const response = await api.post(`/auth/refresh?refresh_token=${encodeURIComponent(refreshToken)}`)
           const { access_token, refresh_token } = response.data
           
           localStorage.setItem('token', access_token)
@@ -139,6 +139,13 @@ export const EmployeesAPI = {
       return newEmployee
     }
     const response = await api.post('/api/v1/employees/', employeeData)
+    return response.data
+  },
+
+  async createMultipart(formData) {
+    const response = await api.post('/api/v1/employees/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
     return response.data
   },
 

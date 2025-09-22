@@ -2,12 +2,15 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, T
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+import uuid
 
 
 class Employee(Base):
     __tablename__ = "employees"
-
+    # Keep existing integer PK for backward compatibility; adding UUID column for new API spec
     id = Column(Integer, primary_key=True, index=True)
+    uuid = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     employee_id = Column(String(50), unique=True, index=True, nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
@@ -31,3 +34,14 @@ class Employee(Base):
     created_by_user = relationship("User", back_populates="created_employees", lazy="select")
     violations = relationship("Violation", back_populates="employee", lazy="select")
     pose_alerts = relationship("PoseAlert", back_populates="employee", lazy="select")
+    photos = relationship("EmployeePhoto", back_populates="employee", cascade="all, delete-orphan", lazy="select")
+
+
+class EmployeePhoto(Base):
+    __tablename__ = "employee_photos"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_path = Column(String(500), nullable=False)
+
+    employee = relationship("Employee", back_populates="photos")

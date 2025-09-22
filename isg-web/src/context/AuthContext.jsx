@@ -59,7 +59,9 @@ export function AuthProvider({ children }) {
       // Call the real ISG API login endpoint
       const response = await AuthAPI.login(email, password)
       
-      // Store tokens
+      // Store tokens immediately so interceptors pick them up for the next request
+      if (response?.access_token) localStorage.setItem('token', response.access_token)
+      if (response?.refresh_token) localStorage.setItem('refreshToken', response.refresh_token)
       setToken(response.access_token)
       setRefreshToken(response.refresh_token)
       

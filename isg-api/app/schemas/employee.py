@@ -64,6 +64,9 @@ class EmployeeResponse(EmployeeBase):
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    # Computed/presentation fields
+    status: Optional[str] = None
+    last_activity: Optional[str] = None
 
     class Config:
         from_attributes = True

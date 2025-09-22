@@ -1,11 +1,12 @@
 from pydantic import BaseModel, EmailStr, validator
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
+from .role import RoleRead
 
 
 class UserBase(BaseModel):
     email: EmailStr
-    username: str
+    username: str | None = None
     full_name: str
     is_active: bool = True
     role_id: int
@@ -46,9 +47,10 @@ class UserUpdate(BaseModel):
 
 class UserInDB(UserBase):
     id: int
-    hashed_password: str
     is_superuser: bool
+    password_hash: str
     last_login: Optional[datetime] = None
+    locked_until: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -56,15 +58,20 @@ class UserInDB(UserBase):
         from_attributes = True
 
 
-class UserResponse(UserBase):
+class UserRead(UserBase):
     id: int
     is_superuser: bool
     last_login: Optional[datetime] = None
+    locked_until: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    roles: Optional[List[RoleRead]] = None
 
     class Config:
         from_attributes = True
+
+# Backwards-compatible alias used by existing routes
+UserResponse = UserRead
 
 
 class UserLogin(BaseModel):

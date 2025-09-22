@@ -10,6 +10,19 @@ export default function Employees() {
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', position: '' })
+  const [files, setFiles] = useState([null, null, null])
+
+  const user = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('user') || '{}') } catch { return {} }
+  }, [])
+  const roleNames = useMemo(() => {
+    const roles = user?.roles || []
+    const single = user?.role?.name ? [user.role.name] : []
+    return [...single, ...roles.map(r => r.name)].map(r => (r || '').toUpperCase())
+  }, [user])
+  const canManage = roleNames.includes('ADMIN') || roleNames.includes('MANAGER')
 
   useEffect(() => {
     (async () => {
@@ -42,10 +55,7 @@ export default function Employees() {
            position.toLowerCase().includes(searchTerm)
   }), [list, q])
 
-  const handleAddEmployee = () => {
-    // TODO: Implement add employee modal/page
-    console.log('Add employee clicked')
-  }
+  const handleAddEmployee = () => setShowAdd(true)
 
   const handleEditEmployee = (employee) => {
     // TODO: Implement edit employee modal/page
@@ -124,12 +134,12 @@ export default function Employees() {
       onClick: handleViewEmployee,
       className: 'text-primary-600 hover:text-primary-700'
     },
-    {
+    canManage ? {
       icon: 'edit',
       title: 'Edit Employee',
       onClick: handleEditEmployee,
       className: 'text-neutral-600 hover:text-neutral-700'
-    }
+    } : null
   ]
 
   return (
@@ -149,9 +159,11 @@ export default function Employees() {
           <Button variant="secondary" icon="document" size="sm">
             Export List
           </Button>
-          <Button variant="primary" icon="add" onClick={handleAddEmployee}>
+          {canManage && (
+            <Button variant="primary" icon="add" onClick={handleAddEmployee}>
             Add Employee
-          </Button>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -261,6 +273,63 @@ export default function Employees() {
             'No employees found. Add your first employee to get started.'
           }
         />
+      )}
+
+      {/* Add Employee Modal */}
+      {showAdd && canManage && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3 className="text-xl font-semibold">Add Employee</h3>
+              <button onClick={() => setShowAdd(false)} className="icon-button">
+                <Icon name="close" />
+              </button>
+            </div>
+            <div className="modal-body space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input className="input" placeholder="First Name" value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} />
+                <input className="input" placeholder="Last Name" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
+                <input className="input" placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+                <input className="input" placeholder="Phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                <input className="input" placeholder="Position" value={form.position} onChange={e => setForm({ ...form, position: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-neutral-700">Photos (up to 3)</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[0,1,2].map(i => (
+                    <input key={i} type="file" accept="image/*" onChange={(e) => {
+                      const newFiles = [...files]
+                      newFiles[i] = e.target.files?.[0] || null
+                      setFiles(newFiles)
+                    }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
+              <Button variant="primary" onClick={async () => {
+                try {
+                  const data = new FormData()
+                  data.append('first_name', form.first_name)
+                  data.append('last_name', form.last_name)
+                  data.append('email', form.email)
+                  if (form.phone) data.append('phone', form.phone)
+                  if (form.position) data.append('position', form.position)
+                  if (files[0]) data.append('photo1', files[0])
+                  if (files[1]) data.append('photo2', files[1])
+                  if (files[2]) data.append('photo3', files[2])
+                  const created = await EmployeesAPI.createMultipart(data)
+                  setList([created, ...list])
+                  setShowAdd(false)
+                } catch (e) {
+                  console.error('Failed to create employee', e)
+                  alert('Failed to create employee')
+                }
+              }}>Save</Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

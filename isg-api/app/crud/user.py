@@ -1,9 +1,10 @@
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy.orm import Session
 from app.models.user import User
 from app.models.role import Role
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.security import get_password_hash, verify_password
+from app.crud.audit import log_action
 
 
 def get_user(db: Session, user_id: int) -> Optional[User]:
@@ -35,6 +36,9 @@ def get_users(
     
     return query.offset(skip).limit(limit).all()
 
+# Backwards-compatible alias
+list_users = get_users
+
 
 def create_user(db: Session, user: UserCreate) -> User:
     """Create new user"""
@@ -46,9 +50,9 @@ def create_user(db: Session, user: UserCreate) -> User:
     hashed_password = get_password_hash(user.password)
     db_user = User(
         email=user.email,
-        username=user.username,
+        username=user.username or user.email,
         full_name=user.full_name,
-        hashed_password=hashed_password,
+        password_hash=hashed_password,
         is_active=user.is_active,
         role_id=user.role_id,
         profile_image=user.profile_image,
@@ -59,6 +63,10 @@ def create_user(db: Session, user: UserCreate) -> User:
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    try:
+        log_action(db, user_id=db_user.id, action="user_create", target=f"user:{db_user.id}")
+    except Exception:
+        pass
     return db_user
 
 
@@ -96,6 +104,10 @@ def delete_user(db: Session, user_id: int) -> bool:
     
     db_user.is_active = False
     db.commit()
+    try:
+        log_action(db, user_id=user_id, action="user_delete", target=f"user:{user_id}")
+    except Exception:
+        pass
     return True
 
 
@@ -104,7 +116,7 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
     user = get_user_by_email(db, email)
     if not user:
         return None
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(password, user.password_hash):
         return None
     return user
 
@@ -117,3 +129,15 @@ def is_active(user: User) -> bool:
 def is_superuser(user: User) -> bool:
     """Check if user is superuser"""
     return user.is_superuser
+
+
+def assign_role(db: Session, user: User, role: Role) -> None:
+    if role not in user.roles:
+        user.roles.append(role)
+        db.commit()
+
+
+def remove_role(db: Session, user: User, role: Role) -> None:
+    if role in user.roles:
+        user.roles.remove(role)
+        db.commit()

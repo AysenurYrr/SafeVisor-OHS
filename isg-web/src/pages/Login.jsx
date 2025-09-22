@@ -1,8 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import Icon from '../components/Icon'
-import Button from '../components/Button'
 
 export default function Login() {
   const { login, token } = useAuth()
@@ -22,118 +20,100 @@ export default function Login() {
       await login({ email, password })
       navigate('/dashboard', { replace: true })
     } catch (err) {
-      setError('Invalid email or password. Please try again.')
+      setError('Login failed')
     } finally {
       setLoading(false)
     }
   }
 
+  const demoUsers = [
+    { email: 'admin@isg.local', role: 'Admin (IT)' },
+    { email: 'manager@isg.local', role: 'Manager' },
+    { email: 'assistant@isg.local', role: 'Assistant Manager' },
+    { email: 'hse@isg.local', role: 'HSE Expert' },
+  ]
+
   return (
-    <div className="space-y-8 animate-fade-in-custom">
+    <div className="max-w-md w-full space-y-6">
       {/* Header */}
       <div className="text-center">
-        <div className="flex justify-center mb-6">
-          <div className="p-4 bg-primary-600 rounded-2xl shadow-large">
-            <Icon name="safety-solid" className="w-12 h-12 text-white" />
-          </div>
+        <div className="flex justify-center mb-4">
+          <span className="text-6xl">🛡️</span>
         </div>
-        <h1 className="text-3xl font-bold text-neutral-900">Welcome to SafeVisor</h1>
-        <p className="text-neutral-600 mt-2">Occupational Health & Safety Management System</p>
+        <h1 className="text-3xl font-bold text-gray-900">SafeVisor</h1>
+        <p className="mt-2 text-gray-600">Occupational Health & Safety System</p>
       </div>
 
       {/* Login Form */}
-      <form onSubmit={onSubmit} className="space-y-6">
-        {error && (
-          <div className="p-4 bg-danger-50 border border-danger-200 rounded-lg">
-            <div className="flex items-center gap-2">
-              <Icon name="info" className="w-5 h-5 text-danger-600" />
-              <span className="text-danger-600 text-sm font-medium">{error}</span>
-            </div>
-          </div>
-        )}
+      <div className="card p-8">
+        <h2 className="text-xl font-semibold mb-6 text-center">Sign in to your account</h2>
         
-        <div className="form-group">
-          <label className="label">Email Address</label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Icon name="user" className="w-5 h-5 text-neutral-400" />
+        <form onSubmit={onSubmit} className="space-y-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-md text-sm">
+              {error}
             </div>
+          )}
+          
+          <div>
+            <label className="label">Email address</label>
             <input 
-              className="input pl-10" 
+              className="input" 
               type="email" 
               value={email} 
               onChange={(e) => setEmail(e.target.value)} 
-              placeholder="Enter your email"
               required 
+              placeholder="Enter your email"
             />
           </div>
-        </div>
-        
-        <div className="form-group">
-          <label className="label">Password</label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Icon name="safety" className="w-5 h-5 text-neutral-400" />
-            </div>
+          
+          <div>
+            <label className="label">Password</label>
             <input 
-              className="input pl-10" 
+              className="input" 
               type="password" 
               value={password} 
               onChange={(e) => setPassword(e.target.value)} 
-              placeholder="Enter your password"
               required 
+              placeholder="Enter your password"
             />
           </div>
-        </div>
-        
-        <Button 
-          variant="primary" 
-          size="lg"
-          className="w-full" 
-          type="submit" 
-          loading={loading}
-          icon={loading ? null : "safety"}
-        >
-          {loading ? 'Signing In...' : 'Sign In to SafeVisor'}
-        </Button>
-      </form>
-
-      {/* Demo Credentials */}
-      <div className="p-4 bg-neutral-50 rounded-lg border border-neutral-200">
-        <h3 className="text-sm font-semibold text-neutral-900 mb-3 flex items-center gap-2">
-          <Icon name="info" className="w-4 h-4 text-primary-600" />
-          Demo Credentials
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-          <div className="space-y-2">
-            <div>
-              <span className="font-medium text-neutral-700">Admin:</span>
-              <div className="text-neutral-600">admin@isg.local</div>
-            </div>
-            <div>
-              <span className="font-medium text-neutral-700">Manager:</span>
-              <div className="text-neutral-600">manager@isg.local</div>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <div>
-              <span className="font-medium text-neutral-700">HSE Officer:</span>
-              <div className="text-neutral-600">hse@isg.local</div>
-            </div>
-            <div>
-              <span className="font-medium text-neutral-700">Assistant:</span>
-              <div className="text-neutral-600">assistant@isg.local</div>
-            </div>
-          </div>
-        </div>
-        <p className="text-xs text-neutral-500 mt-3">
-          Use any of these emails with the password "password" to explore different role permissions.
-        </p>
+          
+          <button 
+            className="btn w-full justify-center py-3 text-base" 
+            type="submit" 
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <span className="animate-spin mr-2">⏳</span>
+                Signing in...
+              </>
+            ) : (
+              'Sign in'
+            )}
+          </button>
+        </form>
       </div>
 
-      {/* Footer */}
-      <div className="text-center text-xs text-neutral-500">
-        <p>© 2025 SafeVisor. Protecting your workplace, securing your future.</p>
+      {/* Demo Users */}
+      <div className="card p-6 bg-blue-50 border-blue-200">
+        <h3 className="text-sm font-medium text-blue-900 mb-3">Demo Accounts</h3>
+        <div className="grid grid-cols-1 gap-2">
+          {demoUsers.map((user) => (
+            <button
+              key={user.email}
+              onClick={() => setEmail(user.email)}
+              className="text-left p-2 rounded-md hover:bg-blue-100 transition-colors text-sm"
+            >
+              <div className="font-medium text-blue-900">{user.email}</div>
+              <div className="text-blue-700">{user.role}</div>
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-blue-700 mt-3">
+          Click any email above to auto-fill. Default password: "password"
+        </p>
       </div>
     </div>
   )
