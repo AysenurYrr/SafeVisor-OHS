@@ -11,7 +11,18 @@ export default function Employees() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({ first_name: '', last_name: '', email: '', phone: '', position: '' })
+  const [form, setForm] = useState({ 
+    employee_id: '', 
+    first_name: '', 
+    last_name: '', 
+    email: '', 
+    phone: '', 
+    department: '', 
+    position: '', 
+    hire_date: '', 
+    emergency_phone: '', 
+    notes: '' 
+  })
   const [files, setFiles] = useState([null, null, null])
 
   const user = useMemo(() => {
@@ -287,14 +298,21 @@ export default function Employees() {
             </div>
             <div className="modal-body space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input className="input" placeholder="First Name" value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} />
-                <input className="input" placeholder="Last Name" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
-                <input className="input" placeholder="Email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+                <input className="input" placeholder="Employee ID" value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })} />
+                <input className="input" placeholder="First Name *" value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} />
+                <input className="input" placeholder="Last Name *" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
+                <input className="input" placeholder="Email *" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
                 <input className="input" placeholder="Phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-                <input className="input" placeholder="Position" value={form.position} onChange={e => setForm({ ...form, position: e.target.value })} />
+                <input className="input" placeholder="Department *" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} />
+                <input className="input" placeholder="Position *" value={form.position} onChange={e => setForm({ ...form, position: e.target.value })} />
+                <input className="input" type="date" placeholder="Hire Date *" value={form.hire_date} onChange={e => setForm({ ...form, hire_date: e.target.value })} />
+                <input className="input" placeholder="Emergency Phone" value={form.emergency_phone} onChange={e => setForm({ ...form, emergency_phone: e.target.value })} />
+              </div>
+              <div>
+                <textarea className="input" rows="3" placeholder="Notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <label className="text-sm text-neutral-700">Photos (up to 3)</label>
+                <label className="text-sm text-neutral-700">Profile Photo (up to 3 photos)</label>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {[0,1,2].map(i => (
                     <input key={i} type="file" accept="image/*" onChange={(e) => {
@@ -310,21 +328,46 @@ export default function Employees() {
               <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancel</Button>
               <Button variant="primary" onClick={async () => {
                 try {
+                  // Validate required fields
+                  if (!form.first_name || !form.last_name || !form.email || !form.department || !form.position) {
+                    alert('Please fill in all required fields (marked with *)')
+                    return
+                  }
+                  
                   const data = new FormData()
                   data.append('first_name', form.first_name)
                   data.append('last_name', form.last_name)
                   data.append('email', form.email)
+                  if (form.employee_id) data.append('employee_id', form.employee_id)
                   if (form.phone) data.append('phone', form.phone)
+                  if (form.department) data.append('department', form.department)
                   if (form.position) data.append('position', form.position)
+                  if (form.hire_date) data.append('hire_date', form.hire_date)
+                  if (form.emergency_phone) data.append('emergency_phone', form.emergency_phone)
+                  if (form.notes) data.append('notes', form.notes)
                   if (files[0]) data.append('photo1', files[0])
                   if (files[1]) data.append('photo2', files[1])
                   if (files[2]) data.append('photo3', files[2])
+                  
                   const created = await EmployeesAPI.createMultipart(data)
                   setList([created, ...list])
                   setShowAdd(false)
+                  setForm({ 
+                    employee_id: '', 
+                    first_name: '', 
+                    last_name: '', 
+                    email: '', 
+                    phone: '', 
+                    department: '', 
+                    position: '', 
+                    hire_date: '', 
+                    emergency_phone: '', 
+                    notes: '' 
+                  })
+                  setFiles([null, null, null])
                 } catch (e) {
                   console.error('Failed to create employee', e)
-                  alert('Failed to create employee')
+                  alert('Failed to create employee: ' + (e.response?.data?.detail || e.message))
                 }
               }}>Save</Button>
             </div>

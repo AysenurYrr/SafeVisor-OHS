@@ -119,16 +119,16 @@ def create_employee(
     return filter_employee_for_role(employee, current_user)
 
 
-@router.get("/{employee_id}", response_model=EmployeeResponse)
+@router.get("/{employee_uuid}", response_model=EmployeeResponse)
 def read_employee(
-    employee_id: int,
+    employee_uuid: str,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> EmployeeResponse:
     """
-    Get a specific employee by ID
+    Get a specific employee by UUID
     """
-    employee = crud_employee.get_employee(db, employee_id=employee_id)
+    employee = crud_employee.get_employee_by_uuid(db, employee_uuid=employee_uuid)
     if not employee:
         raise HTTPException(
             status_code=404,
@@ -138,18 +138,18 @@ def read_employee(
     return filter_employee_for_role(employee, current_user)
 
 
-@router.put("/{employee_id}", response_model=EmployeeResponse)
+@router.put("/{employee_uuid}", response_model=EmployeeResponse)
 def update_employee(
     *,
     db: Session = Depends(deps.get_db),
-    employee_id: int,
+    employee_uuid: str,
     employee_in: EmployeeUpdate,
     current_user: User = Depends(deps.check_manager_or_admin_role),
 ) -> EmployeeResponse:
     """
-    Update an employee (Manager/Admin only)
+    Update an employee by UUID (Manager/Admin only)
     """
-    employee = crud_employee.get_employee(db, employee_id=employee_id)
+    employee = crud_employee.get_employee_by_uuid(db, employee_uuid=employee_uuid)
     if not employee:
         raise HTTPException(
             status_code=404,
@@ -179,29 +179,29 @@ def update_employee(
             )
     
     employee = crud_employee.update_employee(
-        db=db, employee_id=employee_id, employee_update=employee_in
+        db=db, employee_id=employee.id, employee_update=employee_in
     )
     return filter_employee_for_role(employee, current_user)
 
 
-@router.delete("/{employee_id}")
+@router.delete("/{employee_uuid}")
 def delete_employee(
     *,
     db: Session = Depends(deps.get_db),
-    employee_id: int,
+    employee_uuid: str,
     current_user: User = Depends(deps.check_manager_or_admin_role),
 ) -> dict:
     """
-    Delete an employee (Manager/Admin only)
+    Delete an employee by UUID (Manager/Admin only)
     """
-    employee = crud_employee.get_employee(db, employee_id=employee_id)
+    employee = crud_employee.get_employee_by_uuid(db, employee_uuid=employee_uuid)
     if not employee:
         raise HTTPException(
             status_code=404,
             detail="Employee not found"
         )
     
-    success = crud_employee.delete_employee(db, employee_id=employee_id)
+    success = crud_employee.delete_employee(db, employee_id=employee.id)
     if not success:
         raise HTTPException(
             status_code=500,

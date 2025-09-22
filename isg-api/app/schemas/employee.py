@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, validator
-from typing import Optional
+from pydantic import BaseModel, EmailStr, validator, Field
+from typing import Optional, Union
 from datetime import datetime, date
+import uuid as uuid_lib
 
 
 class EmployeeBase(BaseModel):
@@ -50,6 +51,7 @@ class EmployeeUpdate(BaseModel):
 
 class EmployeeInDB(EmployeeBase):
     id: int
+    uuid: Union[str, uuid_lib.UUID]
     face_encoding: Optional[str] = None
     created_by: int
     created_at: datetime
@@ -61,6 +63,7 @@ class EmployeeInDB(EmployeeBase):
 
 class EmployeeResponse(EmployeeBase):
     id: int
+    uuid: Union[str, uuid_lib.UUID]
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None

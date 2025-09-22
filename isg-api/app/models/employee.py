@@ -10,7 +10,7 @@ class Employee(Base):
     __tablename__ = "employees"
     # Keep existing integer PK for backward compatibility; adding UUID column for new API spec
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    uuid = Column(PG_UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4, server_default=func.gen_random_uuid())
     employee_id = Column(String(50), unique=True, index=True, nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)

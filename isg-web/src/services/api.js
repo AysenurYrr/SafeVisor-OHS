@@ -2,11 +2,11 @@ import axios from 'axios'
 
 // Demo data for when backend is not available
 const DEMO_EMPLOYEES = [
-  { id: 1, first_name: 'John', last_name: 'Doe', email: 'john.doe@company.com', department: 'Manufacturing', position: 'Floor Supervisor', status: 'active', last_activity: '2 hours ago' },
-  { id: 2, first_name: 'Jane', last_name: 'Smith', email: 'jane.smith@company.com', department: 'Safety', position: 'HSE Officer', status: 'active', last_activity: '30 minutes ago' },
-  { id: 3, first_name: 'Mike', last_name: 'Johnson', email: 'mike.johnson@company.com', department: 'Manufacturing', position: 'Machine Operator', status: 'active', last_activity: '1 hour ago' },
-  { id: 4, first_name: 'Sarah', last_name: 'Williams', email: 'sarah.williams@company.com', department: 'Quality Control', position: 'Quality Inspector', status: 'active', last_activity: '3 hours ago' },
-  { id: 5, first_name: 'David', last_name: 'Brown', email: 'david.brown@company.com', department: 'Maintenance', position: 'Maintenance Tech', status: 'inactive', last_activity: '1 day ago' },
+  { id: 1, uuid: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', first_name: 'John', last_name: 'Doe', email: 'john.doe@company.com', department: 'Manufacturing', position: 'Floor Supervisor', status: 'active', last_activity: '2 hours ago' },
+  { id: 2, uuid: 'b2c3d4e5-f6a7-8901-bcde-f23456789012', first_name: 'Jane', last_name: 'Smith', email: 'jane.smith@company.com', department: 'Safety', position: 'HSE Officer', status: 'active', last_activity: '30 minutes ago' },
+  { id: 3, uuid: 'c3d4e5f6-a7b8-9012-cdef-345678901234', first_name: 'Mike', last_name: 'Johnson', email: 'mike.johnson@company.com', department: 'Manufacturing', position: 'Machine Operator', status: 'active', last_activity: '1 hour ago' },
+  { id: 4, uuid: 'd4e5f6a7-b8c9-0123-defa-456789012345', first_name: 'Sarah', last_name: 'Williams', email: 'sarah.williams@company.com', department: 'Quality Control', position: 'Quality Inspector', status: 'active', last_activity: '3 hours ago' },
+  { id: 5, uuid: 'e5f6a7b8-c9d0-1234-efab-567890123456', first_name: 'David', last_name: 'Brown', email: 'david.brown@company.com', department: 'Maintenance', position: 'Maintenance Tech', status: 'inactive', last_activity: '1 day ago' },
 ]
 
 const DEMO_VIOLATIONS = [
@@ -124,11 +124,11 @@ export const EmployeesAPI = {
     return response.data
   },
 
-  async get(id) {
+  async get(uuid) {
     if (isDemoMode()) {
-      return DEMO_EMPLOYEES.find(emp => emp.id === id)
+      return DEMO_EMPLOYEES.find(emp => emp.uuid === uuid)
     }
-    const response = await api.get(`/api/v1/employees/${id}`)
+    const response = await api.get(`/api/v1/employees/${uuid}`)
     return response.data
   },
 
@@ -149,29 +149,29 @@ export const EmployeesAPI = {
     return response.data
   },
 
-  async update(id, employeeData) {
+  async update(uuid, employeeData) {
     if (isDemoMode()) {
-      const index = DEMO_EMPLOYEES.findIndex(emp => emp.id === id)
+      const index = DEMO_EMPLOYEES.findIndex(emp => emp.uuid === uuid)
       if (index !== -1) {
         DEMO_EMPLOYEES[index] = { ...DEMO_EMPLOYEES[index], ...employeeData }
         return DEMO_EMPLOYEES[index]
       }
       return null
     }
-    const response = await api.put(`/api/v1/employees/${id}`, employeeData)
+    const response = await api.put(`/api/v1/employees/${uuid}`, employeeData)
     return response.data
   },
 
-  async delete(id) {
+  async delete(uuid) {
     if (isDemoMode()) {
-      const index = DEMO_EMPLOYEES.findIndex(emp => emp.id === id)
+      const index = DEMO_EMPLOYEES.findIndex(emp => emp.uuid === uuid)
       if (index !== -1) {
         DEMO_EMPLOYEES.splice(index, 1)
         return { success: true }
       }
       return { success: false }
     }
-    const response = await api.delete(`/api/v1/employees/${id}`)
+    const response = await api.delete(`/api/v1/employees/${uuid}`)
     return response.data
   }
 }

@@ -3,11 +3,25 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from app.models.employee import Employee
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
+import uuid as uuid_lib
 
 
 def get_employee(db: Session, employee_id: int) -> Optional[Employee]:
     """Get employee by ID"""
     return db.query(Employee).filter(Employee.id == employee_id).first()
+
+
+def get_employee_by_uuid(db: Session, employee_uuid: str) -> Optional[Employee]:
+    """Get employee by UUID"""
+    try:
+        # Handle both string and UUID types
+        if isinstance(employee_uuid, str):
+            uuid_obj = uuid_lib.UUID(employee_uuid)
+        else:
+            uuid_obj = employee_uuid
+        return db.query(Employee).filter(Employee.uuid == uuid_obj).first()
+    except (ValueError, TypeError):
+        return None
 
 
 def get_employee_by_employee_id(db: Session, employee_id: str) -> Optional[Employee]:

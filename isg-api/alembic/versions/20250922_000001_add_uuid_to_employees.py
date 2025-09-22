@@ -8,6 +8,8 @@ This migration addresses runtime errors where the application expects an
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+import uuid
 
 # revision identifiers, used by Alembic.
 revision = "20250922_000001_add_uuid_to_employees"
@@ -33,31 +35,36 @@ def upgrade() -> None:
 
     # Add the column if it doesn't exist
     if not _has_column(bind, "employees", "uuid"):
+        # Use proper UUID type with gen_random_uuid() default
         op.add_column(
             "employees",
-            sa.Column("uuid", sa.String(length=36), nullable=True),
+            sa.Column(
+                "uuid", 
+                PG_UUID(as_uuid=True), 
+                nullable=True, 
+                server_default=sa.text("gen_random_uuid()")
+            ),
         )
 
-        # Backfill using Postgres uuid generator if available; fall back to random uuids in Python if needed
+        # Backfill existing rows with generated UUIDs
         try:
-            # uuid-ossp extension function; cast to text to fit String(36)
-            bind.execute(text("UPDATE employees SET uuid = uuid_generate_v4()::text WHERE uuid IS NULL"))
+            # Use gen_random_uuid() which is available in modern PostgreSQL
+            bind.execute(text("UPDATE employees SET uuid = gen_random_uuid() WHERE uuid IS NULL"))
         except Exception:
-            # Fallback: generate in application side (works on any DB)
-            import uuid as _py_uuid
+            # Fallback: generate UUIDs in Python
             result = bind.execute(text("SELECT id FROM employees WHERE uuid IS NULL"))
             rows = result.fetchall()
             for (emp_id,) in rows:
                 bind.execute(
                     text("UPDATE employees SET uuid = :uuid WHERE id = :id"),
-                    {"uuid": str(_py_uuid.uuid4()), "id": emp_id},
+                    {"uuid": uuid.uuid4(), "id": emp_id},
                 )
 
         # Enforce NOT NULL
         op.alter_column(
             "employees",
             "uuid",
-            existing_type=sa.String(length=36),
+            existing_type=PG_UUID(as_uuid=True),
             nullable=False,
         )
 
