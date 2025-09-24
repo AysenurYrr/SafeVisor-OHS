@@ -8,6 +8,12 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     gcc \
     curl \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

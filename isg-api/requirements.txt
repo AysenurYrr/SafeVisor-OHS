@@ -35,5 +35,10 @@ python-dateutil==2.8.2
 # Utilities
 typing-extensions==4.8.0
 
+# AI/ML Dependencies for PPE Detection
+torch>=2.0.0
+ultralytics>=8.0.0
+opencv-python==4.8.1.78
+
 # Build tooling (temporary workaround for pkg_resources deprecation warnings)
 setuptools<81
