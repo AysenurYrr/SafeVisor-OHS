@@ -1,0 +1,12 @@
+{
+  "required_items": [
+    "Glasses",
+    "Face-mask",
+    "Ear-mufs",
+    "Gloves",
+    "Safety-vest",
+    "Helmet"
+  ],
+  "workspace": "tersane",
+  "ui_lang": "tr"
+}
