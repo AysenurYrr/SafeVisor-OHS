@@ -17,6 +17,7 @@ services:
     volumes:
       # Mount only necessary paths to avoid permission issues with pgdata
       - ./app:/app/app
+      - ./app/static:/app/app/static
       - ./alembic.ini:/app/alembic.ini
       - ./alembic:/app/alembic
       - ./requirements.txt:/app/requirements.txt

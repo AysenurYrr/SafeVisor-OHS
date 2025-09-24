@@ -141,11 +141,16 @@ def refresh_access_token(
 
 @router.get("/me", response_model=UserResponse)
 def read_users_me(
+    db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> UserResponse:
     """
-    Get current user information
+    Get current user information, including primary role and m2m roles
     """
+    # Touch relationships to ensure they are loaded for serialization
+    _ = current_user.role.name if getattr(current_user, "role", None) else None
+    if getattr(current_user, "roles", None) is not None:
+        _ = [r.name for r in current_user.roles]
     return current_user
 
 

@@ -65,6 +65,7 @@ class UserRead(UserBase):
     locked_until: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    role: Optional[RoleRead] = None
     roles: Optional[List[RoleRead]] = None
 
     class Config:

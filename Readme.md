@@ -50,3 +50,14 @@ docker compose up -d
 ## Documentation
 - See `isg-api/README.md` for API details
 - See `isg-web/README.md` for frontend details
+
+
+## Sıfırdan
+1. terminal
+- Docker başlat
+- cd isg-api
+- docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+2. terminal 
+- cd isg-web
+- npm run dev
