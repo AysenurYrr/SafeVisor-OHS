@@ -59,6 +59,8 @@ __pycache__/
 venv/
 isg-api/venv/
 isg-api/isg.db
+isg-api/test.db
+isg-api/test_employees.db
 isg-api/pgdata/
 isg-api/__pycache__/
 isg-api/.pytest_cache/
