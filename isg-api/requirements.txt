@@ -34,3 +34,6 @@ python-dateutil==2.8.2
 
 # Utilities
 typing-extensions==4.8.0
+
+# Build tooling (temporary workaround for pkg_resources deprecation warnings)
+setuptools<81

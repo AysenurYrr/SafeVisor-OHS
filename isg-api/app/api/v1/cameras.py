@@ -1,5 +1,8 @@
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import List, Optional, Iterator
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header, Request
+from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
+import os
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.crud import camera as crud_camera
@@ -14,6 +17,143 @@ from app.schemas.camera import (
 
 router = APIRouter()
 
+
+@router.get("/demo")
+def stream_demo_video(
+    request: Request,
+    range: Optional[str] = Header(default=None, alias="Range"),
+    token_header: Optional[HTTPAuthorizationCredentials] = Depends(deps.security_scheme),
+    token_q: Optional[str] = Query(default=None, alias="token"),
+    db: Session = Depends(deps.get_db),
+):
+    """
+    Stream demo video (mp4) with optional HTTP Range support.
+    Access restricted to Admin or Manager.
+    """
+    # Authenticate: Accept Authorization: Bearer ... or token query param
+    from app.core import security as _security
+    from app.crud import user as _crud_user
+
+    token_value: Optional[str] = None
+    if token_header and getattr(token_header, "credentials", None):
+        token_value = token_header.credentials
+    elif token_q:
+        token_value = token_q
+
+    if not token_value:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
+
+    try:
+        payload = _security.verify_token(token_value)
+        if payload is None:
+            raise ValueError("Invalid token")
+        user_id = int(payload)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+
+    user = _crud_user.get_user(db, user_id=user_id)
+    if not user or not _crud_user.is_active(user):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
+
+    # Role check: allow ADMIN or MANAGER or superuser
+    names = set()
+    if getattr(user, "role", None) and getattr(user.role, "name", None):
+        names.add(user.role.name.upper())
+    if getattr(user, "roles", None):
+        for r in user.roles:
+            if r and getattr(r, "name", None):
+                names.add(r.name.upper())
+    allowed_roles = {"ADMIN", "MANAGER"}
+    if not (names & allowed_roles) and not _crud_user.is_superuser(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager or Admin access required")
+
+    # Resolve demo file path: app/static/videos/demo.* (prefer mp4)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))  # .../app
+    videos_dir = os.path.join(base_dir, "static", "videos")
+    candidate_names = [
+        ("demo.mp4", "video/mp4"),
+        ("demo.m4v", "video/mp4"),
+        ("demo.m4", "video/mp4"),
+        ("demo.webm", "video/webm"),
+        ("demo.mov", "video/quicktime"),
+    ]
+    video_path = None
+    content_type = None
+    for name, ctype in candidate_names:
+        path = os.path.join(videos_dir, name)
+        if os.path.exists(path):
+            video_path = path
+            content_type = ctype
+            break
+
+    if not video_path:
+        raise HTTPException(status_code=404, detail="Demo video not found. Place demo.mp4 (or demo.m4v/webm/mov) under app/static/videos/")
+
+    file_size = os.path.getsize(video_path)
+    chunk_size = 1024 * 1024  # 1MB
+
+    def file_iterator(start: int, end: int):
+        with open(video_path, "rb") as f:
+            f.seek(start)
+            remaining = end - start + 1
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                data = f.read(read_size)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    if range is not None:
+        # Example Range header: "bytes=0-1023" or "bytes=1024-"
+        try:
+            bytes_unit, ranges = range.strip().split("=")
+            if bytes_unit != "bytes":
+                raise ValueError("Only 'bytes' range unit is supported")
+            start_str, end_str = ranges.split("-")
+            start = int(start_str) if start_str else 0
+            end = int(end_str) if end_str else file_size - 1
+            # Clamp values
+            start = max(0, start)
+            end = min(end, file_size - 1)
+            if start > end:
+                raise ValueError("Invalid Range header")
+        except Exception:
+            # 416 Range Not Satisfiable
+            return StreamingResponse(
+                iter(()),
+                status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+                headers={
+                    "Content-Range": f"bytes */{file_size}",
+                    "Accept-Ranges": "bytes",
+                },
+                media_type=content_type,
+            )
+
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(end - start + 1),
+            "Cache-Control": "no-cache",
+        }
+        return StreamingResponse(
+            file_iterator(start, end),
+            status_code=status.HTTP_206_PARTIAL_CONTENT,
+            media_type=content_type,
+            headers=headers,
+        )
+
+    # No Range header: stream full file
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(file_size),
+        "Cache-Control": "no-cache",
+    }
+    return StreamingResponse(
+        file_iterator(0, file_size - 1),
+        media_type=content_type,
+        headers=headers,
+    )
 
 @router.get("/", response_model=CameraListResponse)
 def read_cameras(
@@ -84,6 +224,133 @@ def create_camera(
     )
     return camera
 
+
+@router.get("/{camera_id}/stream")
+def stream_camera_video(
+    camera_id: int,
+    request: Request,
+    range: Optional[str] = Header(default=None, alias="Range"),
+    token_header: Optional[HTTPAuthorizationCredentials] = Depends(deps.security_scheme),
+    token_q: Optional[str] = Query(default=None, alias="token"),
+    db: Session = Depends(deps.get_db),
+):
+    """
+    Stream specified demo camera video by camera_id with HTTP Range support.
+    Camera-1 -> demo.mp4, Camera-2 -> demo2.mp4, Camera-3 -> demo3.mp4
+    Access restricted to Admin or Manager.
+    """
+    # Authenticate
+    from app.core import security as _security
+    from app.crud import user as _crud_user
+
+    token_value: Optional[str] = None
+    if token_header and getattr(token_header, "credentials", None):
+        token_value = token_header.credentials
+    elif token_q:
+        token_value = token_q
+    if not token_value:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
+    try:
+        payload = _security.verify_token(token_value)
+        if payload is None:
+            raise ValueError("Invalid token")
+        user_id = int(payload)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+
+    user = _crud_user.get_user(db, user_id=user_id)
+    if not user or not _crud_user.is_active(user):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
+
+    # Role check
+    names = set()
+    if getattr(user, "role", None) and getattr(user.role, "name", None):
+        names.add(user.role.name.upper())
+    if getattr(user, "roles", None):
+        for r in user.roles:
+            if r and getattr(r, "name", None):
+                names.add(r.name.upper())
+    allowed_roles = {"ADMIN", "MANAGER"}
+    if not (names & allowed_roles) and not _crud_user.is_superuser(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager or Admin access required")
+
+    # Map camera_id to file name
+    mapping = {
+        1: ("demo.mp4", "video/mp4"),
+        2: ("demo2.mp4", "video/mp4"),
+        3: ("demo3.mp4", "video/mp4"),
+    }
+    if camera_id not in mapping:
+        raise HTTPException(status_code=404, detail="Unknown camera id")
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))  # .../app
+    videos_dir = os.path.join(base_dir, "static", "videos")
+    filename, content_type = mapping[camera_id]
+    video_path = os.path.join(videos_dir, filename)
+    if not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail=f"Video for camera {camera_id} not found: {filename}")
+
+    file_size = os.path.getsize(video_path)
+    chunk_size = 1024 * 1024
+
+    def file_iterator(start: int, end: int):
+        with open(video_path, "rb") as f:
+            f.seek(start)
+            remaining = end - start + 1
+            while remaining > 0:
+                read_size = min(chunk_size, remaining)
+                data = f.read(read_size)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    if range is not None:
+        try:
+            bytes_unit, ranges = range.strip().split("=")
+            if bytes_unit != "bytes":
+                raise ValueError("Only 'bytes' range unit is supported")
+            start_str, end_str = ranges.split("-")
+            start = int(start_str) if start_str else 0
+            end = int(end_str) if end_str else file_size - 1
+            start = max(0, start)
+            end = min(end, file_size - 1)
+            if start > end:
+                raise ValueError("Invalid Range header")
+        except Exception:
+            return StreamingResponse(
+                iter(()),
+                status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+                headers={
+                    "Content-Range": f"bytes */{file_size}",
+                    "Accept-Ranges": "bytes",
+                },
+                media_type=content_type,
+            )
+
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(end - start + 1),
+            "Cache-Control": "no-cache",
+        }
+        return StreamingResponse(
+            file_iterator(start, end),
+            status_code=status.HTTP_206_PARTIAL_CONTENT,
+            media_type=content_type,
+            headers=headers,
+        )
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(file_size),
+        "Cache-Control": "no-cache",
+    }
+    return StreamingResponse(
+        file_iterator(0, file_size - 1),
+        media_type=content_type,
+        headers=headers,
+    )
 
 @router.get("/{camera_id}", response_model=CameraResponse)
 def read_camera(
@@ -214,3 +481,5 @@ def camera_heartbeat(
         )
     
     return {"message": "Camera heartbeat updated"}
+
+

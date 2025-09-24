@@ -96,18 +96,31 @@ export function AuthProvider({ children }) {
 
   const hasRole = (roles) => {
     if (!roles || roles.length === 0) return true
-    if (!user?.role?.name) return false
-    
-    // Map backend role names to frontend role names
-    const roleMapping = {
-      'Admin': 'Admin (IT)',
-      'Manager': 'Manager',
-      'AssistantManager': 'AssistantManager',
-      'HSEExpert': 'HSEExpert'
+    if (!user) return false
+
+    // Normalize allowed roles to uppercase for comparison
+    const allowedUpper = new Set(roles.map(r => String(r).toUpperCase()))
+
+    // Collect user role names (primary + any m2m roles if present)
+    const names = new Set()
+    const add = (n) => { if (n) names.add(String(n).toUpperCase()) }
+    add(user.role?.name)
+    if (Array.isArray(user.roles)) user.roles.forEach(r => add(r?.name))
+
+    // Add friendly aliases to cover UI labels
+    const aliases = new Set()
+    if (names.has('ADMIN')) { aliases.add('ADMIN'); aliases.add('ADMIN (IT)'); aliases.add('ADMIN (IT)'.toUpperCase()) }
+    if (names.has('MANAGER')) { aliases.add('MANAGER') }
+    if (names.has('HSE_EXPERT')) { aliases.add('HSE_EXPERT'); aliases.add('HSEEXPERT') }
+
+    // Compare
+    const userUpper = new Set([...names, ...Array.from(aliases).map(a => String(a).toUpperCase())])
+    // Superuser can access all
+    if (user.is_superuser) return true
+    for (const r of userUpper) {
+      if (allowedUpper.has(r)) return true
     }
-    
-    const userRole = roleMapping[user.role.name] || user.role.name
-    return roles.includes(userRole)
+    return false
   }
 
   const clearError = () => setError(null)
