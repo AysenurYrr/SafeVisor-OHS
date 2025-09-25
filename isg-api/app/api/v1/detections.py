@@ -112,7 +112,7 @@ def stream_detection(
     def generate_stream():
         """Generate MJPEG stream with detection overlays."""
         try:
-            for frame_bytes in detector_service.process_video_stream(video_path):
+            for frame_bytes in detector_service.process_video_stream(video_path, camera_id=camera_id, db_session=db):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         except Exception as e:
@@ -138,52 +138,40 @@ def get_violation_reports(
     skip: int = 0,
 ) -> List[ViolationResponse]:
     """
-    Get PPE violation reports.
-    
-    Note: This is a placeholder implementation. In a real system, 
-    violations would be stored in the database and retrieved here.
+    Get PPE violation reports from database.
     """
-    # TODO: Implement database storage and retrieval of violations
-    # For now, return sample data to demonstrate the API structure
+    from app.crud.violation import get_violations
+    from app.schemas.violation import ViolationResponse as DBViolationResponse
+    import json
     
-    sample_violations = [
-        {
-            "id": 1,
-            "camera_id": 1,
-            "violation_type": "no_helmet",
-            "description": "Person without safety helmet detected",
-            "timestamp": "2024-01-20T10:30:00Z",
-            "confidence": 0.85,
-            "employee_id": None,
-            "resolved": False
-        },
-        {
-            "id": 2,
-            "camera_id": 2,
-            "violation_type": "no_vest",
-            "description": "Person without safety vest detected", 
-            "timestamp": "2024-01-20T11:15:00Z",
-            "confidence": 0.92,
-            "employee_id": None,
-            "resolved": False
-        },
-        {
-            "id": 3,
-            "camera_id": 1,
-            "violation_type": "no_helmet",
-            "description": "Person without safety helmet detected",
-            "timestamp": "2024-01-20T12:00:00Z",
-            "confidence": 0.78,
-            "employee_id": None,
-            "resolved": True
-        }
-    ]
+    # Get violations from database
+    violations = get_violations(db=db, skip=skip, limit=limit)
     
-    # Apply pagination
-    end_idx = skip + limit
-    paginated_violations = sample_violations[skip:end_idx]
+    # Convert to the API response format
+    response_violations = []
+    for violation in violations:
+        # Parse bbox coordinates if available
+        bbox_data = None
+        if violation.bbox_coordinates:
+            try:
+                bbox_data = json.loads(violation.bbox_coordinates)
+            except (json.JSONDecodeError, ValueError):
+                bbox_data = None
+        
+        response_violation = ViolationResponse(
+            id=violation.id,
+            camera_id=violation.camera_id,
+            violation_type=violation.violation_type.value,
+            description=violation.description or "",
+            timestamp=violation.created_at.isoformat(),
+            confidence=violation.confidence_score / 100.0,  # Convert back to 0-1 range
+            employee_id=violation.employee_id,
+            resolved=(violation.status.value == "resolved"),
+            bbox_coordinates=bbox_data  # Include bounding box data
+        )
+        response_violations.append(response_violation)
     
-    return [ViolationResponse(**violation) for violation in paginated_violations]
+    return response_violations
 
 
 @router.get("/status")

@@ -28,6 +28,7 @@ class ViolationResponse(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0, description="Detection confidence")
     employee_id: Optional[str] = Field(None, description="Employee ID if identified")
     resolved: bool = Field(False, description="Whether the violation has been resolved")
+    bbox_coordinates: Optional[Dict[str, int]] = Field(None, description="Bounding box coordinates {x, y, width, height}")
 
     class Config:
         from_attributes = True

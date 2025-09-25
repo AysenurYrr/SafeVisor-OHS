@@ -236,12 +236,14 @@ class PPEDetectorService:
         
         return not (x2_1 < x1_2 or x2_2 < x1_1 or y2_1 < y1_2 or y2_2 < y1_1)
     
-    def process_video_stream(self, video_path: str) -> Generator[bytes, None, None]:
+    def process_video_stream(self, video_path: str, camera_id: int = None, db_session=None) -> Generator[bytes, None, None]:
         """
         Process video stream and yield frames with PPE detection.
         
         Args:
             video_path: Path to video file
+            camera_id: Camera ID for storing violations
+            db_session: Database session for storing violations
             
         Yields:
             JPEG encoded frames with detection overlays
@@ -255,6 +257,7 @@ class PPEDetectorService:
             return
         
         cap = cv2.VideoCapture(video_path)
+        frame_count = 0
         
         try:
             while True:
@@ -269,6 +272,11 @@ class PPEDetectorService:
                 # Detect PPE
                 detections = self.detect_ppe(frame)
                 
+                # Analyze for violations and store in DB (every 30 frames to avoid spam)
+                if frame_count % 30 == 0 and camera_id and db_session:
+                    violations = self.analyze_violations(detections)
+                    self._store_violations(violations, camera_id, db_session)
+                
                 # Draw detections
                 processed_frame = self.draw_detections(frame, detections)
                 
@@ -276,11 +284,62 @@ class PPEDetectorService:
                 ret, buffer = cv2.imencode('.jpg', processed_frame)
                 if ret:
                     yield buffer.tobytes()
+                
+                frame_count += 1
                     
         except Exception as e:
             logger.error(f"Error processing video stream: {e}")
         finally:
             cap.release()
+
+    def _store_violations(self, violations: List[Dict[str, Any]], camera_id: int, db_session) -> None:
+        """
+        Store violations in the database.
+        
+        Args:
+            violations: List of violation dictionaries
+            camera_id: Camera ID
+            db_session: Database session
+        """
+        try:
+            from app.crud.violation import create_violation
+            from app.schemas.violation import ViolationCreate, ViolationTypeEnum
+            from app.models.violation import ViolationType
+            import json
+            
+            for violation in violations:
+                # Map violation type to enum
+                violation_type = violation.get('type', 'incomplete_ppe')
+                if violation_type == 'no_helmet':
+                    vtype = ViolationType.NO_HELMET
+                elif violation_type == 'no_vest':
+                    vtype = ViolationType.NO_VEST
+                else:
+                    vtype = ViolationType.INCOMPLETE_PPE
+                
+                # Create bounding box JSON
+                bbox = violation.get('box', (0, 0, 0, 0))
+                bbox_json = json.dumps({
+                    'x': int(bbox[0]),
+                    'y': int(bbox[1]), 
+                    'width': int(bbox[2] - bbox[0]),
+                    'height': int(bbox[3] - bbox[1])
+                })
+                
+                # Create violation
+                violation_create = ViolationCreate(
+                    camera_id=camera_id,
+                    violation_type=vtype,
+                    description=violation.get('description', ''),
+                    confidence_score=int(violation.get('confidence', 0.0) * 100),
+                    bbox_coordinates=bbox_json
+                )
+                
+                create_violation(db_session, violation_create)
+                logger.info(f"Stored violation: {violation_type} for camera {camera_id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to store violations: {e}")
 
 
 # Global singleton instance

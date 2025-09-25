@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { api } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -9,6 +9,7 @@ export default function Cameras() {
   const [detectionStatus, setDetectionStatus] = useState({})
   const [violations, setViolations] = useState([])
   const [loading, setLoading] = useState(false)
+  const intervalRef = useRef(null)
   
   const cameras = useMemo(() => ([
     { id: 1, name: 'Camera-1', desc: 'Demo stream 1 (demo.mp4)' },
@@ -18,6 +19,32 @@ export default function Cameras() {
 
   const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream?token=${encodeURIComponent(token || '')}`
   const detectionSrc = `${api.defaults.baseURL}/api/v1/detections/stream/${selected}?token=${encodeURIComponent(token || '')}`
+
+  // Fetch violations periodically when detection is active
+  useEffect(() => {
+    if (isDetectionMode) {
+      // Fetch immediately
+      fetchViolations()
+      
+      // Set up periodic fetching every 5 seconds
+      intervalRef.current = setInterval(() => {
+        fetchViolations()
+      }, 5000)
+    } else {
+      // Clear interval when detection is stopped
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+      }
+    }
+  }, [isDetectionMode])
 
   const startDetection = async () => {
     setLoading(true)
@@ -112,35 +139,63 @@ export default function Cameras() {
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-gray-600">Logged in as: {user?.full_name || user?.email}</p>
             <div className="flex items-center space-x-2">
+              <label className="inline-flex items-center">
+                <input
+                  type="checkbox"
+                  checked={isDetectionMode}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      startDetection()
+                    } else {
+                      stopDetection()
+                    }
+                  }}
+                  disabled={loading}
+                  className="form-checkbox h-4 w-4 text-primary-600"
+                />
+                <span className="ml-2 text-sm">PPE Detection</span>
+              </label>
               <span className={`px-2 py-1 rounded text-xs ${isDetectionMode ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                {isDetectionMode ? 'PPE Detection ON' : 'Normal Video'}
+                {isDetectionMode ? 'Detection ON' : 'Normal Video'}
               </span>
             </div>
           </div>
           
-          {isDetectionMode ? (
-            <img
-              key={`detection-${selected}`}
-              src={detectionSrc}
-              alt="PPE Detection Stream"
+          <div className="relative">
+            {/* Always use video element, but switch sources */}
+            <video
+              key={`video-${selected}-${isDetectionMode ? 'detection' : 'normal'}`}
+              controls={!isDetectionMode}
+              autoPlay
+              muted
+              loop
               style={{ width: '100%', maxHeight: 540, background: '#000' }}
               className="rounded"
-            />
-          ) : (
-            <video
-              key={`normal-${selected}`}
-              controls
-              style={{ width: '100%', maxHeight: 540, background: '#000' }}
               preload="metadata"
             >
-              <source src={normalSrc} type="video/mp4" />
+              <source src={isDetectionMode ? detectionSrc : normalSrc} type={isDetectionMode ? "video/mjpeg" : "video/mp4"} />
               Your browser does not support the video tag.
             </video>
-          )}
+            
+            {/* Fallback for MJPEG stream - use img element only if video fails */}
+            {isDetectionMode && (
+              <img
+                src={detectionSrc}
+                alt="PPE Detection Stream"
+                style={{ width: '100%', maxHeight: 540, background: '#000', display: 'none' }}
+                className="rounded absolute top-0 left-0"
+                onError={(e) => {
+                  // Show img element if video fails to display MJPEG
+                  e.target.style.display = 'block'
+                  e.target.previousElementSibling.style.display = 'none'
+                }}
+              />
+            )}
+          </div>
           
           <p className="mt-2 text-xs text-gray-500">
             {isDetectionMode 
-              ? "PPE Detection active. Green boxes show helmets, yellow show vests, blue show faces."
+              ? "PPE Detection active. Green boxes show helmets, yellow show vests, blue show faces. Violations are automatically saved to database."
               : "If the video doesn't start, ensure: backend is running and videos demo.mp4, demo2.mp4, demo3.mp4 exist under app/static/videos/."
             }
           </p>
@@ -163,6 +218,9 @@ export default function Cameras() {
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Description
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Bounding Box
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Time
@@ -188,6 +246,16 @@ export default function Cameras() {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {violation.description}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-500">
+                      {violation.bbox_coordinates ? (
+                        <div>
+                          <div>X: {violation.bbox_coordinates.x}</div>
+                          <div>Y: {violation.bbox_coordinates.y}</div>
+                          <div>W: {violation.bbox_coordinates.width}</div>
+                          <div>H: {violation.bbox_coordinates.height}</div>
+                        </div>
+                      ) : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(violation.timestamp).toLocaleString()}
