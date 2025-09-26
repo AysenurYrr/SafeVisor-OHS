@@ -24,6 +24,7 @@ def stream_demo_video(
     range: Optional[str] = Header(default=None, alias="Range"),
     token_header: Optional[HTTPAuthorizationCredentials] = Depends(deps.security_scheme),
     token_q: Optional[str] = Query(default=None, alias="token"),
+    token_alt: Optional[str] = Query(default=None, alias="access_token"),
     db: Session = Depends(deps.get_db),
 ):
     """
@@ -39,12 +40,18 @@ def stream_demo_video(
         token_value = token_header.credentials
     elif token_q:
         token_value = token_q
+    elif token_alt:
+        token_value = token_alt
 
     if not token_value:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
 
     try:
-        payload = _security.verify_token(token_value)
+        # Sanitize possible prefixes/quotes
+        tok = token_value.strip().strip('"').strip("'")
+        if tok.lower().startswith("bearer "):
+            tok = tok[7:].strip()
+        payload = _security.verify_token(tok)
         if payload is None:
             raise ValueError("Invalid token")
         user_id = int(payload)

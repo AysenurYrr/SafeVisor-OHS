@@ -61,3 +61,10 @@ docker compose up -d
 2. terminal 
 - cd isg-web
 - npm run dev
+
+---
+
+Sadece API kodunu değiştirdiğinde şu yeterli:
+
+docker compose restart isg-api
+npm run dev

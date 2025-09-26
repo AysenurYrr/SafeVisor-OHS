@@ -3,12 +3,18 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies (avoid deprecated libgl1-mesa-glx, use libgl1) and reduce layer size
+RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     gcc \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 # Copy requirements first for better caching
 COPY requirements.txt .
