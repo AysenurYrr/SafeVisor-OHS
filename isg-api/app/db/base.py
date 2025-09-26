@@ -13,3 +13,5 @@ from app.models.camera import Camera  # noqa
 from app.models.detection import Detection  # noqa
 from app.models.violation import Violation  # noqa
 from app.models.pose_alert import PoseAlert  # noqa
+from app.models.violation_log import ViolationLog  # noqa
+from app.models.analytics import Analytics  # noqa

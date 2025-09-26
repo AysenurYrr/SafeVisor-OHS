@@ -1,18 +1,27 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Float, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
+from sqlalchemy.dialects.postgresql import JSONB
+import enum
+
+
+class CameraStatus(enum.Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    UNKNOWN = "unknown"
 
 
 class Camera(Base):
     __tablename__ = "cameras"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False, index=True)
+    name = Column(String(100), nullable=False, unique=True, index=True)  # Made unique as required
     location = Column(String(255), nullable=False)
     ip_address = Column(String(45), nullable=True)  # IPv4/IPv6
     port = Column(Integer, default=554)
-    stream_url = Column(String(500), nullable=False)
+    stream_url = Column(String(500), nullable=False)  # Keep for backward compatibility
+    stream_path = Column(String(500), nullable=False)  # New required field
     camera_type = Column(String(50), default="ip")  # ip, usb, etc.
     resolution = Column(String(20), default="1920x1080")
     fps = Column(Integer, default=30)
@@ -29,9 +38,14 @@ class Camera(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # New fields as per requirements
+    violation_rules = Column(JSONB, nullable=True, default=list)  # e.g., ["helmet_required", "gloves_required"]
+    status = Column(Enum(CameraStatus), default=CameraStatus.UNKNOWN, nullable=False)
 
     # Relationships
     created_by_user = relationship("User", back_populates="created_cameras", lazy="select")
     detections = relationship("Detection", back_populates="camera", lazy="select")
     violations = relationship("Violation", back_populates="camera", lazy="select")
     pose_alerts = relationship("PoseAlert", back_populates="camera", lazy="select")
+    violation_logs = relationship("ViolationLog", back_populates="camera", lazy="select")

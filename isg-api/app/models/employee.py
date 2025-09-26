@@ -1,8 +1,8 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Date
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Date, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 import uuid
 
 
@@ -29,12 +29,21 @@ class Employee(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # New fields as per requirements
+    violation_score = Column(Float, default=0.0, nullable=False)  # 0-100 scale
+    photo_1_path = Column(String(500), nullable=True)  # Required at creation via validation
+    photo_2_path = Column(String(500), nullable=True)  # Required at creation via validation
+    photo_3_path = Column(String(500), nullable=True)  # Required at creation via validation
+    face_embeddings = Column(JSONB, nullable=True)  # JSONB array of floats
 
     # Relationships
     created_by_user = relationship("User", back_populates="created_employees", lazy="select")
     violations = relationship("Violation", back_populates="employee", lazy="select")
     pose_alerts = relationship("PoseAlert", back_populates="employee", lazy="select")
     photos = relationship("EmployeePhoto", back_populates="employee", cascade="all, delete-orphan", lazy="select")
+    violation_logs = relationship("ViolationLog", back_populates="employee", lazy="select")
+    analytics = relationship("Analytics", back_populates="employee", lazy="select")
 
 
 class EmployeePhoto(Base):

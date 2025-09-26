@@ -4,7 +4,7 @@ import os
 import logging
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1 import auth, users, employees, cameras, violations, pose_alerts, detections
+from app.api.v1 import auth, users, employees, cameras, violations, pose_alerts, detections, analytics, violation_logs
 """
 Ensure all SQLAlchemy models are imported so that relationships using
 string references (e.g., "PoseAlert") can be resolved during mapper
@@ -130,6 +130,8 @@ app.include_router(cameras.router, prefix="/api/v1/cameras", tags=["cameras"])
 app.include_router(violations.router, prefix="/api/v1/violations", tags=["violations"])
 app.include_router(pose_alerts.router, prefix="/api/v1/pose-alerts", tags=["pose-alerts"])
 app.include_router(detections.router, prefix="/api/v1/detections", tags=["detections"])
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
+app.include_router(violation_logs.router, prefix="/api/v1/violation-logs", tags=["violation-logs"])
 
 
 @app.get("/")

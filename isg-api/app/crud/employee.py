@@ -116,7 +116,13 @@ def create_employee(db: Session, employee: EmployeeCreate, created_by: int) -> E
         face_encoding=employee.face_encoding,
         is_active=employee.is_active,
         notes=employee.notes,
-        created_by=created_by
+        created_by=created_by,
+        # New fields
+        violation_score=employee.violation_score,
+        photo_1_path=employee.photo_1_path,
+        photo_2_path=employee.photo_2_path,
+        photo_3_path=employee.photo_3_path,
+        face_embeddings=employee.face_embeddings
     )
     db.add(db_employee)
     db.commit()
@@ -134,7 +140,7 @@ def update_employee(
     if not db_employee:
         return None
     
-    update_data = employee_update.dict(exclude_unset=True)
+    update_data = employee_update.model_dump(exclude_unset=True)
     
     for field, value in update_data.items():
         setattr(db_employee, field, value)

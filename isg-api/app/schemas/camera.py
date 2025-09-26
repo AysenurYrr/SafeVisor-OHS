@@ -1,6 +1,13 @@
-from pydantic import BaseModel, validator
-from typing import Optional
+from pydantic import BaseModel, field_validator
+from typing import Optional, List
 from datetime import datetime
+from enum import Enum
+
+
+class CameraStatusEnum(str, Enum):
+    ONLINE = "online"
+    OFFLINE = "offline"
+    UNKNOWN = "unknown"
 
 
 class CameraBase(BaseModel):
@@ -8,7 +15,8 @@ class CameraBase(BaseModel):
     location: str
     ip_address: Optional[str] = None
     port: int = 554
-    stream_url: str
+    stream_url: str  # Keep for backward compatibility
+    stream_path: str  # New required field
     camera_type: str = "ip"
     resolution: str = "1920x1080"
     fps: int = 30
@@ -21,19 +29,30 @@ class CameraBase(BaseModel):
     pose_detection: bool = True
     face_recognition: bool = True
     description: Optional[str] = None
+    violation_rules: Optional[List[str]] = []  # e.g., ["helmet_required", "gloves_required"]
+    status: CameraStatusEnum = CameraStatusEnum.UNKNOWN
 
 
 class CameraCreate(CameraBase):
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_name(cls, v):
         if not v or len(v) < 3:
             raise ValueError('Camera name must be at least 3 characters long')
         return v
     
-    @validator('stream_url')
+    @field_validator('stream_url')
+    @classmethod
     def validate_stream_url(cls, v):
         if not v:
             raise ValueError('Stream URL is required')
+        return v
+    
+    @field_validator('stream_path')
+    @classmethod
+    def validate_stream_path(cls, v):
+        if not v:
+            raise ValueError('Stream path is required')
         return v
 
 
@@ -43,6 +62,7 @@ class CameraUpdate(BaseModel):
     ip_address: Optional[str] = None
     port: Optional[int] = None
     stream_url: Optional[str] = None
+    stream_path: Optional[str] = None
     camera_type: Optional[str] = None
     resolution: Optional[str] = None
     fps: Optional[int] = None
@@ -55,6 +75,8 @@ class CameraUpdate(BaseModel):
     pose_detection: Optional[bool] = None
     face_recognition: Optional[bool] = None
     description: Optional[str] = None
+    violation_rules: Optional[List[str]] = None
+    status: Optional[CameraStatusEnum] = None
 
 
 class CameraInDB(CameraBase):
@@ -92,4 +114,4 @@ class CameraStatus(BaseModel):
     is_active: bool
     is_recording: bool
     last_seen: Optional[datetime] = None
-    status: str  # online, offline, error
+    status: CameraStatusEnum  # online, offline, unknown
