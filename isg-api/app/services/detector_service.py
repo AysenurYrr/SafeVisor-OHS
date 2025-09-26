@@ -39,6 +39,7 @@ class PPEDetectorService:
     
     _instance: Optional['PPEDetectorService'] = None
     _lock: Lock = Lock()
+    _detector: Any | None = None
     
     def __new__(cls) -> 'PPEDetectorService':
         """Ensure singleton pattern."""
@@ -54,8 +55,11 @@ class PPEDetectorService:
             return
         
         self._initialized = True
-        self._detector: Optional[YoloDetector] = None
+        # Use plain assignment to avoid instance attribute annotations inside __init__
+        self._detector = None  # type: ignore[assignment]
         self._model_loaded = False
+        # de-dup map: {(camera_id, violation_type): last_timestamp}
+        self._last_violation_time = {}
         self._load_detector()
     
     def _load_detector(self) -> None:
@@ -303,9 +307,10 @@ class PPEDetectorService:
         """
         try:
             from app.crud.violation import create_violation
-            from app.schemas.violation import ViolationCreate, ViolationTypeEnum
+            from app.schemas.violation import ViolationCreate
             from app.models.violation import ViolationType
             import json
+            import time
             
             for violation in violations:
                 # Map violation type to enum
@@ -317,6 +322,14 @@ class PPEDetectorService:
                 else:
                     vtype = ViolationType.INCOMPLETE_PPE
                 
+                # Simple cooldown: avoid storing duplicates within 10 seconds per camera+type
+                now = time.time()
+                cooldown_key = (camera_id, violation_type)
+                last_ts = self._last_violation_time.get(cooldown_key, 0)
+                if now - last_ts < 10:
+                    continue
+                self._last_violation_time[cooldown_key] = now
+
                 # Create bounding box JSON
                 bbox = violation.get('box', (0, 0, 0, 0))
                 bbox_json = json.dumps({
