@@ -54,7 +54,7 @@ docker compose up -d
 
 ## Sıfırdan
 1. terminal
-- Docker başlat
+- Docker başlatılmalıdır.
 - cd isg-api
 - docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
