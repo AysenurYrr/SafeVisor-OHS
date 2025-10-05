@@ -25,9 +25,9 @@ class EmployeeBase(BaseModel):
 
 class EmployeeCreate(EmployeeBase):
     face_encoding: Optional[str] = None
-    photo_1_path: str = Field(..., min_length=1)  # Required
-    photo_2_path: str = Field(..., min_length=1)  # Required
-    photo_3_path: str = Field(..., min_length=1)  # Required
+    photo_1_path: Optional[str] = None  # Optional - will be set after file upload
+    photo_2_path: Optional[str] = None  # Optional - will be set after file upload
+    photo_3_path: Optional[str] = None  # Optional - will be set after file upload
     
     @field_validator('employee_id')
     @classmethod

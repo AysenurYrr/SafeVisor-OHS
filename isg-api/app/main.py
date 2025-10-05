@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.staticfiles import StaticFiles
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 import os
 import logging
 from fastapi.middleware.cors import CORSMiddleware
@@ -120,6 +122,42 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors and return JSON with detailed error messages"""
+    errors = []
+    for error in exc.errors():
+        error_msg = {
+            "field": " -> ".join(str(x) for x in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"]
+        }
+        errors.append(error_msg)
+    
+    logging.error(f"Validation error on {request.url}: {errors}")
+    
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": "Validation error",
+            "errors": errors
+        }
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle general exceptions and return JSON with error details"""
+    logging.exception(f"Unhandled exception on {request.url}: {exc}")
+    
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "Internal server error",
+            "error": str(exc)
+        }
+    )
 
 # Include routers
 app.include_router(auth.router, prefix="/auth", tags=["authentication"])

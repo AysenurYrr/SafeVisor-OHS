@@ -25,9 +25,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Create static directory structure with proper permissions before switching to non-root user
+RUN mkdir -p /app/static/employees && chown -R app:app /app
+
 # Create non-root user
-RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
+RUN useradd --create-home --shell /bin/bash app || true
 USER app
 
 # Expose port

@@ -349,7 +349,9 @@ export default function Employees() {
                   if (files[1]) data.append('photo2', files[1])
                   if (files[2]) data.append('photo3', files[2])
                   
+                  console.log('Submitting employee data...')
                   const created = await EmployeesAPI.createMultipart(data)
+                  console.log('Employee created successfully:', created)
                   setList([created, ...list])
                   setShowAdd(false)
                   setForm({ 
@@ -366,8 +368,34 @@ export default function Employees() {
                   })
                   setFiles([null, null, null])
                 } catch (e) {
-                  console.error('Failed to create employee', e)
-                  alert('Failed to create employee: ' + (e.response?.data?.detail || e.message))
+                  console.error('Failed to create employee:', e)
+                  
+                  // Extract detailed error message
+                  let errorMessage = 'Failed to create employee'
+                  
+                  if (e.response?.data) {
+                    const errData = e.response.data
+                    
+                    // Handle validation errors
+                    if (errData.errors && Array.isArray(errData.errors)) {
+                      const errorDetails = errData.errors.map(err => 
+                        `${err.field}: ${err.message}`
+                      ).join('\n')
+                      errorMessage += ':\n' + errorDetails
+                    } 
+                    // Handle simple detail message
+                    else if (errData.detail) {
+                      errorMessage += ': ' + errData.detail
+                    }
+                    // Handle error field
+                    else if (errData.error) {
+                      errorMessage += ': ' + errData.error
+                    }
+                  } else if (e.message) {
+                    errorMessage += ': ' + e.message
+                  }
+                  
+                  alert(errorMessage)
                 }
               }}>Save</Button>
             </div>
