@@ -14,38 +14,66 @@ from pathlib import Path
 from detector import YoloDetector
 from face_tracker import FaceTracker
 from evaluator import evaluate_person
-from face_recognizer import enroll_person, img_to_embedding_pil, recognize_face
+from face_recognizer import enroll_person, img_to_embedding_np, recognize_face
 
-# ===============================
-# 🔧 Uygulama Başlatma
-# ===============================
+
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# Webcam başlat
 camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
+# Model ve izleyici
 detector = YoloDetector("models/yolo9e.pt")
 tracker = FaceTracker()
 
-# ✅ Yüz ID ↔ isim eşlemesi (bellek içi)
-recognized_map = {}  # face_id -> person_id
-
-# ===============================
-# 💬 Etiket Haritaları
-# ===============================
+# 💬 İngilizce sınıf adlarını Türkçeye çeviren eşleme
 label_map = {
     "tr": {
-        "Person": "Kişi", "Head": "Kafa", "Face": "Yüz", "Glasses": "Gözlük",
-        "Face-mask": "Maske", "Face-guard": "Yüz Koruyucu", "Ear": "Kulak", "Ear-mufs": "Kulak Koruyucu",
-        "Hands": "Eller", "Gloves": "Eldiven", "Foot": "Ayak", "Shoes": "Ayakkabı",
-        "Safety-vest": "Güvenlik Yeleği", "Tools": "Alet", "Helmet": "Baret",
-        "Medical-suit": "Tıbbi Tulum", "Safety-suit": "İş Tulumu"
+        "Person": "Kişi",
+        "Head": "Kafa",
+        "Face": "Yüz",
+        "Glasses": "Gözlük",
+        "Face-mask": "Maske",
+        "Face-guard": "Yüz Koruyucu",
+        "Ear": "Kulak",
+        "Ear-mufs": "Kulak Koruyucu",
+        "Hands": "Eller",
+        "Gloves": "Eldiven",
+        "Foot": "Ayak",
+        "Shoes": "Ayakkabı",
+        "Safety-vest": "Güvenlik Yeleği",
+        "Tools": "Alet",
+        "Helmet": "Baret",
+        "Medical-suit": "Tıbbi Tulum",
+        "Safety-suit": "İş Tulumu"
+    },
+    "en": {
+        # İngilizce birebir çeviri, yani olduğu gibi
+        "Person": "Person",
+        "Head": "Head",
+        "Face": "Face",
+        "Glasses": "Glasses",
+        "Face-mask": "Face-mask",
+        "Face-guard": "Face-guard",
+        "Ear": "Ear",
+        "Ear-mufs": "Earmuffs",
+        "Hands": "Hands",
+        "Gloves": "Gloves",
+        "Foot": "Foot",
+        "Shoes": "Shoes",
+        "Safety-vest": "Safety-vest",
+        "Tools": "Tools",
+        "Helmet": "Helmet",
+        "Medical-suit": "Medical-suit",
+        "Safety-suit": "Safety-suit"
     }
 }
 
 CONFIG_PATH = Path("config.json")
 
+# 💡 Renk fonksiyonu
 def get_color_for(key: str) -> tuple:
     np.random.seed(hash(key) % 2**32)
     return tuple(int(x) for x in np.random.randint(60, 255, size=3))
@@ -60,9 +88,6 @@ def save_config(cfg):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
-# ===============================
-# 🌐 ROUTES
-# ===============================
 @app.get("/")
 def index(request: Request):
     return templates.TemplateResponse("index2.html", {"request": request})
@@ -77,11 +102,10 @@ async def update_config(req: Request):
     save_config(cfg)
     return JSONResponse({"ok": True})
 
-# ===============================
-# 📡 WEBSOCKET STREAM
-# ===============================
 @app.websocket("/ws")
 async def get_stream(websocket: WebSocket):
+    
+
     await websocket.accept()
     try:
         while True:
@@ -91,58 +115,64 @@ async def get_stream(websocket: WebSocket):
 
             detections = detector.infer(frame)
             config = load_config()
-            required_items = [item.strip().lower() for item in config.get("required_items", [])]
+            required_items = config.get("required_items", [])
+            required_items = [item.strip().lower() for item in required_items]
 
-            # 1️⃣ Yüzleri filtrele
+            # 1. Yüzleri filtrele
             face_boxes = [det["box"] for det in detections if det["cls_name"].lower() == "face"]
+
+            # 2. Yüzlere ID ata
             tracked_faces = tracker.update(face_boxes)
 
-            # 2️⃣ Yüz tanıma + ID eşleştirme
+            # 3. Yüzleri ID ve isimle çiz
             for face in tracked_faces:
                 fid = face["id"]
                 x1, y1, x2, y2 = face["box"]
                 color = get_color_for(f"face_{fid}")
 
+                # ➕ Yüzü kırp, direkt embedding çıkar
                 face_img = frame[y1:y2, x1:x2]
                 if face_img.size == 0:
                     continue
 
-                # Embedding çıkar
-                face_pil = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
-                emb = img_to_embedding_pil(face_pil)
+                emb = img_to_embedding_np(face_img)  # 🔁 hızlı fonksiyon
                 match_id = None
-                score = None
 
                 if emb is not None:
                     match_id, score = recognize_face(emb)
-                    print(f"[RECOGNIZER] Match ID: {match_id} | Score: {score:.3f}")
 
-                    # ✅ Eşleşen kişi belleğe eklenir
-                    if match_id:
-                        recognized_map[fid] = match_id
-
-                # ✅ Stabil isim gösterimi
-                name_label = recognized_map.get(fid, f"Unknown ({fid})")
+                # Etiket yazısı: sadece ID veya ID + eşleşen kişi
+                label = f"ID: {fid}"
+                if match_id:
+                    label += f" | {match_id}"
 
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, name_label, (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                cv2.putText(frame, label, (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-            # 3️⃣ Diğer tespitleri çiz
+            # 4. Diğer tespitleri çiz
             for det in detections:
                 if det["conf"] >= 0.6:
                     x1, y1, x2, y2 = det["box"]
                     label = det["cls_name"]
                     label_lower = label.lower()
                     color = get_color_for(label)
-                    label_text = label_map["tr"].get(label, label)
+
+                    label_text = label_map.get(label, label)
                     thickness = 4 if label_lower in required_items else 1
 
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
-                    cv2.putText(frame, f"{label_text} ({det['conf']:.0%})", (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                    cv2.putText(
+                        frame,
+                        f"{label_text} ({det['conf']:.0%})",
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        color,
+                        1
+                    )
 
-            # 4️⃣ Frame gönder
+            # 5. Frame gönder
             _, buffer = cv2.imencode(".jpg", frame)
             await websocket.send_bytes(buffer.tobytes())
             await asyncio.sleep(0.02)
@@ -150,9 +180,7 @@ async def get_stream(websocket: WebSocket):
     except (WebSocketDisconnect, Exception) as e:
         print("[!] WS Disconnect:", e)
 
-# ===============================
-# 🧍 Kayıt Sayfası
-# ===============================
+
 @app.get("/register")
 def register_page(request: Request):
     return templates.TemplateResponse("register.html", {"request": request})
@@ -164,6 +192,7 @@ async def enroll_person_api(
     full_name: str = Form(""),
     files: list[UploadFile] = Form(...)
 ):
+    from PIL import Image
     from io import BytesIO
 
     images = []
@@ -173,13 +202,10 @@ async def enroll_person_api(
         images.append(img)
 
     try:
-        enrolled_id = enroll_person(person_id, images, full_name)
+        enrolled_id = enroll_person(person_id, images)
         return templates.TemplateResponse("success.html", {"request": request, "person_id": enrolled_id})
     except Exception as e:
         return templates.TemplateResponse("error.html", {"request": request, "message": str(e)})
 
-# ===============================
-# 🚀 Uygulama Başlat
-# ===============================
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8001)

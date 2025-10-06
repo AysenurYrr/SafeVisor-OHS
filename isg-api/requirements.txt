@@ -34,6 +34,8 @@ python-dateutil==2.8.2
 
 # Utilities
 typing-extensions==4.8.0
+requests==2.31.0
+Pillow==10.1.0
 
 # AI/ML Dependencies for PPE Detection
 numpy==1.26.4

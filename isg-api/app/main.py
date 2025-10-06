@@ -113,12 +113,23 @@ app = FastAPI(
 )
 
 # Set up CORS
+# NOTE: When allow_credentials=True, '*' cannot be used. If '*' present in settings, we filter it out.
+configured_origins = [o for o in settings.BACKEND_CORS_ORIGINS if o != "*"]
+if not configured_origins:
+    configured_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=configured_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Authorization", "Content-Disposition"],
 )
 
 # Include routers

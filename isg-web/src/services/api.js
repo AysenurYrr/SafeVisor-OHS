@@ -162,6 +162,13 @@ export const EmployeesAPI = {
     return response.data
   },
 
+  async updateMultipart(uuid, formData) {
+    const response = await api.put(`/api/v1/employees/${uuid}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    return response.data
+  },
+
   async delete(uuid) {
     if (isDemoMode()) {
       const index = DEMO_EMPLOYEES.findIndex(emp => emp.uuid === uuid)

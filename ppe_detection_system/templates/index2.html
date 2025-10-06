@@ -143,6 +143,8 @@
       </div>
 
       <button id="saveBtn" type="button">Ayarları Kaydet</button>
+      <button id="registerBtn" type="button">Çalışan Kaydı</button>
+
     </div>
   </main>
 
@@ -384,6 +386,12 @@
         alert(L.alerts.conn);
       }
     });
+
+    // Çalışan kayıt sayfasına git
+    document.getElementById("registerBtn").addEventListener("click", ()=>{
+      window.location.href = "/register";
+    });
+
   </script>
 </body>
 </html>

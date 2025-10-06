@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Date
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 import uuid
 
 
@@ -10,7 +10,8 @@ class Employee(Base):
     __tablename__ = "employees"
     # Keep existing integer PK for backward compatibility; adding UUID column for new API spec
     id = Column(Integer, primary_key=True, index=True)
-    uuid = Column(PG_UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4, server_default=func.gen_random_uuid())
+    # Using String to match existing database column type (VARCHAR) to avoid casting issues
+    uuid = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     employee_id = Column(String(50), unique=True, index=True, nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
@@ -23,7 +24,14 @@ class Employee(Base):
     emergency_contact = Column(String(255), nullable=True)
     emergency_phone = Column(String(20), nullable=True)
     photo_url = Column(String(500), nullable=True)
-    face_encoding = Column(Text, nullable=True)  # JSON string for face recognition
+    # Three required profile photos
+    photo_front_path = Column(String(500), nullable=True)
+    photo_left_path = Column(String(500), nullable=True)
+    photo_right_path = Column(String(500), nullable=True)
+    face_encoding = Column(Text, nullable=True)  # Deprecated string encoding (legacy)
+    # Averaged face embedding vector (list[float]) computed from profile photos
+    face_embedding = Column(JSONB, nullable=True)
+    violation_score = Column(Integer, default=0, nullable=False)  # Track violation count/score
     is_active = Column(Boolean, default=True)
     notes = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)

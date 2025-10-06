@@ -65,3 +65,6 @@ isg-api/pgdata/
 isg-api/__pycache__/
 isg-api/.pytest_cache/
 isg-api/.coverage
+
+# Uploaded files (employee photos)
+isg-api/app/static/employees/
