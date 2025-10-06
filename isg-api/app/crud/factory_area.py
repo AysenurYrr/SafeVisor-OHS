@@ -164,6 +164,11 @@ def hard_delete_factory_area(db: Session, area_id: int) -> bool:
         text("DELETE FROM area_rules WHERE area_id = :area_id"),
         {"area_id": area_id}
     )
+    # Delete associated cameras mapping explicitly (in case DB FK cascade not enforced)
+    db.execute(
+        text("DELETE FROM area_cameras WHERE area_id = :area_id"),
+        {"area_id": area_id}
+    )
     
     # Delete the area
     db.delete(db_area)

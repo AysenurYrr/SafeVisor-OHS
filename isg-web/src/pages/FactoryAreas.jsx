@@ -7,7 +7,8 @@ import Table from '../components/Table'
 import Loading from '../components/Loading'
 
 export default function FactoryAreas() {
-  const { user } = useAuth()
+  // Bring in hasRole to centralize permission checks
+  const { user, hasRole } = useAuth()
   const [areas, setAreas] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -23,9 +24,12 @@ export default function FactoryAreas() {
   const [safetyRules, setSafetyRules] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
   const [error, setError] = useState(null)
+  const [includeInactive, setIncludeInactive] = useState(false)
+  const [debounceTimer, setDebounceTimer] = useState(null)
 
-  const isAdmin = user?.role?.name === 'Admin' || user?.role === 'Admin (IT)'
-  const isManagerOrAdmin = isAdmin || user?.role?.name === 'Manager' || user?.role === 'Manager'
+  // Permissions using centralized role helper (handles aliases internally)
+  const canManageAreas = hasRole(['ADMIN', 'ADMIN (IT)', 'MANAGER'])
+  const canDeleteAreas = hasRole(['ADMIN', 'ADMIN (IT)'])
 
   useEffect(() => {
     loadAreas()
@@ -33,11 +37,32 @@ export default function FactoryAreas() {
     loadSafetyRules()
   }, [])
 
+  // Debounce search input reload
+  useEffect(() => {
+    if (!showForm) {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      const t = setTimeout(() => {
+        loadAreas()
+      }, 500)
+      setDebounceTimer(t)
+      return () => clearTimeout(t)
+    }
+  }, [searchTerm])
+
   const loadAreas = async () => {
     try {
       setLoading(true)
-      const response = await FactoryAreasAPI.list(0, 100, null, searchTerm)
-      setAreas(response.areas || [])
+      // When includeInactive is false, request only active areas
+  // Always fetch all areas (active + inactive)
+  const response = await FactoryAreasAPI.list(0, 100, null, searchTerm)
+      // Support both wrapped object {areas: [...]} and plain list responses
+      const listCandidate = Array.isArray(response) ? response : response?.areas
+      if (!Array.isArray(listCandidate)) {
+        console.warn('Unexpected factory areas response shape', response)
+        setAreas([])
+      } else {
+        setAreas(listCandidate)
+      }
       setError(null)
     } catch (err) {
       console.error('Error loading factory areas:', err)
@@ -105,6 +130,9 @@ export default function FactoryAreas() {
 
     try {
       await FactoryAreasAPI.delete(id)
+      // Optimistic removal then fetch to ensure consistency
+      setAreas(prev => prev.filter(a => a.id !== id))
+      // Full refresh (handles pagination / server-side filters)
       loadAreas()
     } catch (err) {
       console.error('Error deleting factory area:', err)
@@ -146,61 +174,65 @@ export default function FactoryAreas() {
     }))
   }
 
+  // Adapted to Table component API (header, accessor, cell)
   const columns = [
-    { key: 'name', label: 'Area Name', sortable: true },
-    { 
-      key: 'cameras', 
-      label: 'Cameras',
-      render: (area) => (
-        <span className="text-sm">
-          {area.cameras?.length || 0} camera(s)
-        </span>
+    {
+      key: 'name',
+      header: 'Area Name',
+      accessor: 'name',
+      cell: (row) => <span className="font-medium text-neutral-900">{row.name}</span>
+    },
+    {
+      key: 'cameras',
+      header: 'Cameras',
+      accessor: 'cameras',
+      cell: (row) => (
+        <span className="text-sm">{row.cameras?.length || 0} camera(s)</span>
       )
     },
-    { 
-      key: 'safety_rules', 
-      label: 'Safety Rules',
-      render: (area) => (
+    {
+      key: 'safety_rules',
+      header: 'Safety Rules',
+      accessor: 'safety_rules',
+      cell: (row) => (
         <div className="flex flex-wrap gap-1">
-          {(area.safety_rules || []).slice(0, 3).map(rule => (
-            <span key={rule} className="badge badge-primary text-xs">
-              {rule}
-            </span>
+          {(row.safety_rules || []).slice(0, 3).map(rule => (
+            <span key={rule} className="badge badge-primary text-xs">{rule}</span>
           ))}
-          {(area.safety_rules?.length || 0) > 3 && (
-            <span className="text-xs text-neutral-500">
-              +{area.safety_rules.length - 3} more
-            </span>
+          {(row.safety_rules?.length || 0) > 3 && (
+            <span className="text-xs text-neutral-500">+{row.safety_rules.length - 3} more</span>
           )}
         </div>
       )
     },
     {
       key: 'is_active',
-      label: 'Status',
-      render: (area) => (
-        <span className={`badge ${area.is_active ? 'badge-success' : 'badge-secondary'}`}>
-          {area.is_active ? 'Active' : 'Inactive'}
+      header: 'Status',
+      accessor: 'is_active',
+      cell: (row) => (
+        <span className={`badge ${row.is_active ? 'badge-success' : 'badge-secondary'}`}>
+          {row.is_active ? 'Active' : 'Inactive'}
         </span>
       )
     },
     {
       key: 'actions',
-      label: 'Actions',
-      render: (area) => (
+      header: 'Actions',
+      accessor: 'id',
+      cell: (row) => (
         <div className="flex gap-2">
-          {isManagerOrAdmin && (
+          {canManageAreas && (
             <button
-              onClick={() => handleEdit(area)}
+              onClick={() => handleEdit(row)}
               className="text-primary-600 hover:text-primary-700"
               title="Edit"
             >
               <Icon name="edit" className="w-4 h-4" />
             </button>
           )}
-          {isAdmin && (
+          {canDeleteAreas && (
             <button
-              onClick={() => handleDelete(area.id)}
+              onClick={() => handleDelete(row.id)}
               className="text-danger-600 hover:text-danger-700"
               title="Delete"
             >
@@ -224,7 +256,7 @@ export default function FactoryAreas() {
           <h1 className="text-2xl font-semibold text-neutral-900">Factory Areas</h1>
           <p className="text-neutral-600 mt-1">Manage factory areas with cameras and safety rules</p>
         </div>
-        {isManagerOrAdmin && !showForm && (
+        {canManageAreas && !showForm && (
           <Button onClick={() => setShowForm(true)} variant="primary">
             <Icon name="plus" className="w-4 h-4 mr-2" />
             Add Factory Area
@@ -249,12 +281,15 @@ export default function FactoryAreas() {
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
+                <label htmlFor="area-name" className="block text-sm font-medium text-neutral-700 mb-2">
                   Area Name *
                 </label>
                 <input
+                  id="area-name"
+                  name="name"
                   type="text"
                   required
+                  autoComplete="off"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="input w-full"
@@ -263,10 +298,12 @@ export default function FactoryAreas() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-neutral-700 mb-2">
+                <label htmlFor="area-status" className="block text-sm font-medium text-neutral-700 mb-2">
                   Status
                 </label>
                 <select
+                  id="area-status"
+                  name="is_active"
                   value={formData.is_active}
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
                   className="input w-full"
@@ -278,10 +315,12 @@ export default function FactoryAreas() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-2">
+              <label htmlFor="area-description" className="block text-sm font-medium text-neutral-700 mb-2">
                 Description
               </label>
               <textarea
+                id="area-description"
+                name="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 className="input w-full"
@@ -296,17 +335,23 @@ export default function FactoryAreas() {
                 Safety Rules
               </label>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                {safetyRules.map(rule => (
-                  <label key={rule} className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formData.safety_rules.includes(rule)}
-                      onChange={() => toggleSafetyRule(rule)}
-                      className="form-checkbox h-4 w-4 text-primary-600 rounded"
-                    />
-                    <span className="text-sm text-neutral-700">{rule}</span>
-                  </label>
-                ))}
+                {safetyRules.map(rule => {
+                  const id = `sr-${rule}`
+                  return (
+                    <label key={rule} htmlFor={id} className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        id={id}
+                        name="safety_rules"
+                        type="checkbox"
+                        value={rule}
+                        checked={formData.safety_rules.includes(rule)}
+                        onChange={() => toggleSafetyRule(rule)}
+                        className="form-checkbox h-4 w-4 text-primary-600 rounded"
+                      />
+                      <span className="text-sm text-neutral-700">{rule}</span>
+                    </label>
+                  )
+                })}
               </div>
             </div>
 
@@ -320,23 +365,29 @@ export default function FactoryAreas() {
                   <p className="text-neutral-500 p-4 text-sm">No cameras available</p>
                 ) : (
                   <div className="divide-y divide-neutral-200">
-                    {cameras.map(camera => (
-                      <label key={camera.id} className="flex items-center p-3 hover:bg-neutral-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.camera_ids.includes(camera.id)}
-                          onChange={() => toggleCameraSelection(camera.id)}
-                          className="form-checkbox h-4 w-4 text-primary-600 rounded mr-3"
-                        />
-                        <div className="flex-1">
-                          <div className="font-medium text-neutral-900">{camera.name}</div>
-                          <div className="text-sm text-neutral-600">{camera.location}</div>
-                        </div>
-                        <span className={`badge ${camera.is_active ? 'badge-success' : 'badge-secondary'} text-xs`}>
-                          {camera.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </label>
-                    ))}
+                    {cameras.map(camera => {
+                      const id = `cam-${camera.id}`
+                      return (
+                        <label key={camera.id} htmlFor={id} className="flex items-center p-3 hover:bg-neutral-50 cursor-pointer">
+                          <input
+                            id={id}
+                            name="camera_ids"
+                            type="checkbox"
+                            value={camera.id}
+                            checked={formData.camera_ids.includes(camera.id)}
+                            onChange={() => toggleCameraSelection(camera.id)}
+                            className="form-checkbox h-4 w-4 text-primary-600 rounded mr-3"
+                          />
+                          <div className="flex-1">
+                            <div className="font-medium text-neutral-900">{camera.name}</div>
+                            <div className="text-sm text-neutral-600">{camera.location}</div>
+                          </div>
+                          <span className={`badge ${camera.is_active ? 'badge-success' : 'badge-secondary'} text-xs`}>
+                            {camera.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </label>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -358,22 +409,32 @@ export default function FactoryAreas() {
       {/* Areas List */}
       {!showForm && (
         <div className="bg-white rounded-lg shadow-soft">
-          <div className="p-4 border-b border-neutral-200">
-            <input
-              type="text"
-              placeholder="Search areas..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && loadAreas()}
-              className="input w-full md:w-96"
-            />
+          <div className="p-4 border-b border-neutral-200 flex flex-col md:flex-row gap-4 md:items-center md:justify-between">
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <input
+                id="factory-areas-search"
+                name="factoryAreasSearch"
+                type="text"
+                placeholder="Search areas..."
+                aria-label="Search factory areas"
+                autoComplete="off"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input w-full md:w-96"
+              />
+              <Button type="button" variant="secondary" onClick={loadAreas}>
+                <Icon name="refresh" className="w-4 h-4 mr-1" />
+                Refresh
+              </Button>
+            </div>
+            <div className="text-xs text-neutral-500 w-full md:w-auto">Showing {areas.length} area{areas.length !== 1 && 's'}</div>
           </div>
           
           {areas.length === 0 ? (
             <div className="p-8 text-center">
               <Icon name="info" className="w-12 h-12 text-neutral-400 mx-auto mb-3" />
               <p className="text-neutral-600">No factory areas found</p>
-              {isManagerOrAdmin && (
+              {canManageAreas && (
                 <Button onClick={() => setShowForm(true)} variant="primary" className="mt-4">
                   Create First Area
                 </Button>

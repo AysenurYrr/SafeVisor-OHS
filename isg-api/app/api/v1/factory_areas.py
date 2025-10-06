@@ -73,21 +73,35 @@ def create_factory_area(
     """
     Create new factory area (Manager/Admin only)
     """
-    # Check if area with name already exists
-    area = crud_factory_area.get_factory_area_by_name(db, name=area_in.name)
-    if area:
-        raise HTTPException(
-            status_code=400,
-            detail="Factory area with this name already exists in the system.",
+    # Check if area with name already exists (including inactive/soft-deleted)
+    existing = crud_factory_area.get_factory_area_by_name(db, name=area_in.name)
+    if existing:
+        if existing.is_active:
+            # Active duplicate
+            raise HTTPException(
+                status_code=400,
+                detail="Factory area with this name already exists in the system.",
+            )
+        # Reactivate previously soft-deleted area (treat as upsert)
+        update_payload = FactoryAreaUpdate(
+            name=area_in.name,
+            description=area_in.description,
+            is_active=True,
+            camera_ids=area_in.camera_ids,
+            safety_rules=area_in.safety_rules
         )
-    
+        reactivated = crud_factory_area.update_factory_area(
+            db=db, area_id=existing.id, area_update=update_payload
+        )
+        # Ensure rules loaded
+        reactivated.safety_rules = crud_factory_area.get_area_safety_rules(db, existing.id)
+        return reactivated
+
+    # Create brand new area
     area = crud_factory_area.create_factory_area(
         db=db, area=area_in, created_by=current_user.id
     )
-    
-    # Load safety rules
     area.safety_rules = crud_factory_area.get_area_safety_rules(db, area.id)
-    
     return area
 
 
@@ -158,7 +172,7 @@ def delete_factory_area(
     current_user: User = Depends(deps.check_admin_role),
 ) -> dict:
     """
-    Delete a factory area (Admin only)
+    Permanently delete a factory area (Admin only)
     """
     area = crud_factory_area.get_factory_area(db, area_id=area_id)
     if not area:
@@ -166,15 +180,14 @@ def delete_factory_area(
             status_code=404,
             detail="Factory area not found"
         )
-    
-    success = crud_factory_area.delete_factory_area(db, area_id=area_id)
+    # Perform hard delete
+    success = crud_factory_area.hard_delete_factory_area(db, area_id=area_id)
     if not success:
         raise HTTPException(
             status_code=500,
             detail="Failed to delete factory area"
         )
-    
-    return {"message": "Factory area deleted successfully"}
+    return {"message": "Factory area permanently deleted"}
 
 
 @router.get("/active/list", response_model=List[FactoryAreaResponse])
