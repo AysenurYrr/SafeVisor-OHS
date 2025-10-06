@@ -4,6 +4,7 @@ import Table, { StatusBadge } from '../components/Table'
 import { SkeletonTable } from '../components/Loading'
 import Button from '../components/Button'
 import Icon from '../components/Icon'
+import EditEmployeeModal from '../components/EditEmployeeModal'
 
 export default function Employees() {
   const [list, setList] = useState([])
@@ -11,6 +12,7 @@ export default function Employees() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [editEmployee, setEditEmployee] = useState(null)
   const [form, setForm] = useState({ 
     employee_id: '', 
     first_name: '', 
@@ -71,8 +73,11 @@ export default function Employees() {
   const handleAddEmployee = () => setShowAdd(true)
 
   const handleEditEmployee = (employee) => {
-    // TODO: Implement edit employee modal/page
-    console.log('Edit employee:', employee)
+    setEditEmployee(employee)
+  }
+
+  const handleUpdateEmployee = (updated) => {
+    setList(list.map(emp => emp.id === updated.id ? updated : emp))
   }
 
   const handleViewEmployee = (employee) => {
@@ -456,6 +461,15 @@ export default function Employees() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Employee Modal */}
+      {editEmployee && canManage && (
+        <EditEmployeeModal
+          employee={editEmployee}
+          onClose={() => setEditEmployee(null)}
+          onUpdate={handleUpdateEmployee}
+        />
       )}
     </div>
   )
