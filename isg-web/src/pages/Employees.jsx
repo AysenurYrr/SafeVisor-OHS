@@ -20,10 +20,12 @@ export default function Employees() {
     department: '', 
     position: '', 
     hire_date: '', 
+    emergency_contact: '',
     emergency_phone: '', 
     notes: '' 
   })
   const [files, setFiles] = useState([null, null, null])
+  const [filePreviews, setFilePreviews] = useState([null, null, null])
 
   const user = useMemo(() => {
     try { return JSON.parse(localStorage.getItem('user') || '{}') } catch { return {} }
@@ -33,7 +35,7 @@ export default function Employees() {
     const single = user?.role?.name ? [user.role.name] : []
     return [...single, ...roles.map(r => r.name)].map(r => (r || '').toUpperCase())
   }, [user])
-  const canManage = roleNames.includes('ADMIN') || roleNames.includes('MANAGER')
+  const canManage = roleNames.includes('ADMIN')  // Only Admin can manage
 
   useEffect(() => {
     (async () => {
@@ -86,11 +88,22 @@ export default function Employees() {
       icon: 'person',
       cell: (row) => {
         const fullName = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || 'Unknown'
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+        const photoUrl = row.photo_front_path 
+          ? `${API_BASE_URL}${row.photo_front_path}` 
+          : `https://i.pravatar.cc/150?img=${Math.abs(row.id % 70)}`
+        
         return (
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
-              <Icon name="person" className="w-5 h-5 text-primary-600" />
-            </div>
+            <img 
+              src={photoUrl} 
+              alt={fullName}
+              className="w-10 h-10 rounded-full object-cover border-2 border-primary-100"
+              onError={(e) => {
+                // Fallback to placeholder if image fails to load
+                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName)}&background=random`
+              }}
+            />
             <div>
               <div className="font-medium text-neutral-900">{fullName}</div>
               <div className="text-sm text-neutral-600">{row.email || 'No email'}</div>
@@ -306,22 +319,80 @@ export default function Employees() {
                 <input className="input" placeholder="Department *" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} />
                 <input className="input" placeholder="Position *" value={form.position} onChange={e => setForm({ ...form, position: e.target.value })} />
                 <input className="input" type="date" placeholder="Hire Date *" value={form.hire_date} onChange={e => setForm({ ...form, hire_date: e.target.value })} />
+                <input className="input" placeholder="Emergency Contact Name" value={form.emergency_contact} onChange={e => setForm({ ...form, emergency_contact: e.target.value })} />
                 <input className="input" placeholder="Emergency Phone" value={form.emergency_phone} onChange={e => setForm({ ...form, emergency_phone: e.target.value })} />
               </div>
               <div>
                 <textarea className="input" rows="3" placeholder="Notes" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm text-neutral-700">Profile Photo (up to 3 photos)</label>
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-neutral-700">
+                  Profile Photos (3 Required) *
+                </label>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {[0,1,2].map(i => (
-                    <input key={i} type="file" accept="image/*" onChange={(e) => {
-                      const newFiles = [...files]
-                      newFiles[i] = e.target.files?.[0] || null
-                      setFiles(newFiles)
-                    }} />
+                  {['Front Profile', 'Left Profile', 'Right Profile'].map((label, i) => (
+                    <div key={i} className="space-y-2">
+                      <label className="text-xs text-neutral-600">{label}</label>
+                      {filePreviews[i] && (
+                        <div className="relative">
+                          <img 
+                            src={filePreviews[i]} 
+                            alt={label}
+                            className="w-full h-32 object-cover rounded border-2 border-primary-200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newFiles = [...files]
+                              const newPreviews = [...filePreviews]
+                              newFiles[i] = null
+                              newPreviews[i] = null
+                              setFiles(newFiles)
+                              setFilePreviews(newPreviews)
+                            }}
+                            className="absolute top-1 right-1 bg-danger-600 text-white rounded-full p-1 hover:bg-danger-700"
+                          >
+                            <Icon name="close" className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        className="block w-full text-sm text-neutral-600
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-primary-50 file:text-primary-700
+                          hover:file:bg-primary-100"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null
+                          const newFiles = [...files]
+                          newFiles[i] = file
+                          setFiles(newFiles)
+                          
+                          // Create preview
+                          if (file) {
+                            const reader = new FileReader()
+                            reader.onloadend = () => {
+                              const newPreviews = [...filePreviews]
+                              newPreviews[i] = reader.result
+                              setFilePreviews(newPreviews)
+                            }
+                            reader.readAsDataURL(file)
+                          } else {
+                            const newPreviews = [...filePreviews]
+                            newPreviews[i] = null
+                            setFilePreviews(newPreviews)
+                          }
+                        }} 
+                      />
+                    </div>
                   ))}
                 </div>
+                <p className="text-xs text-neutral-500">
+                  Please upload all three profile photos (front, left, and right view) to create an employee.
+                </p>
               </div>
             </div>
             <div className="modal-footer">
@@ -331,6 +402,12 @@ export default function Employees() {
                   // Validate required fields
                   if (!form.first_name || !form.last_name || !form.email || !form.department || !form.position) {
                     alert('Please fill in all required fields (marked with *)')
+                    return
+                  }
+                  
+                  // Validate that all 3 photos are uploaded
+                  if (!files[0] || !files[1] || !files[2]) {
+                    alert('All three photos (Front, Left, and Right Profile) are required')
                     return
                   }
                   
@@ -344,10 +421,13 @@ export default function Employees() {
                   if (form.position) data.append('position', form.position)
                   if (form.hire_date) data.append('hire_date', form.hire_date)
                   if (form.emergency_phone) data.append('emergency_phone', form.emergency_phone)
+                  if (form.emergency_contact) data.append('emergency_contact', form.emergency_contact)
                   if (form.notes) data.append('notes', form.notes)
-                  if (files[0]) data.append('photo1', files[0])
-                  if (files[1]) data.append('photo2', files[1])
-                  if (files[2]) data.append('photo3', files[2])
+                  
+                  // Append photos with specific field names
+                  data.append('photo_front', files[0])
+                  data.append('photo_left', files[1])
+                  data.append('photo_right', files[2])
                   
                   const created = await EmployeesAPI.createMultipart(data)
                   setList([created, ...list])
@@ -361,13 +441,16 @@ export default function Employees() {
                     department: '', 
                     position: '', 
                     hire_date: '', 
-                    emergency_phone: '', 
+                    emergency_phone: '',
+                    emergency_contact: '', 
                     notes: '' 
                   })
                   setFiles([null, null, null])
+                  setFilePreviews([null, null, null])
                 } catch (e) {
                   console.error('Failed to create employee', e)
-                  alert('Failed to create employee: ' + (e.response?.data?.detail || e.message))
+                  const errorMsg = e.response?.data?.detail || e.message
+                  alert('Failed to create employee: ' + errorMsg)
                 }
               }}>Save</Button>
             </div>
