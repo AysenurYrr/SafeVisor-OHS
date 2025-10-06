@@ -12,6 +12,7 @@ from app.schemas.employee import (
     EmployeeListResponse
 )
 from app.models.employee import Employee, EmployeePhoto
+from app.services.face_embedding_service import generate_employee_embedding
 
 router = APIRouter()
 
@@ -92,6 +93,18 @@ def create_employee(
     Create new employee (Admin only)
     Requires 3 photos: front, left, and right profile
     """
+    # Basic email format validation
+    def _validate_email(value: str):
+        if not value or '@' not in value or value.count('@') != 1:
+            raise HTTPException(status_code=422, detail="Invalid email format")
+        local, domain = value.split('@', 1)
+        if not local or not domain or '.' not in domain:
+            raise HTTPException(status_code=422, detail="Invalid email format")
+        if domain.startswith('.') or domain.endswith('.'):
+            raise HTTPException(status_code=422, detail="Invalid email format")
+
+    _validate_email(email)
+
     # Validate that all 3 photos are provided
     if not photo_front or not photo_left or not photo_right:
         raise HTTPException(
@@ -130,10 +143,29 @@ def create_employee(
 
     # Save the 3 required photos
     save_employee_photos_required(db, employee, photo_front, photo_left, photo_right)
-    
+
     # Refresh to get updated photo paths
     db.refresh(employee)
-    
+
+    # Attempt face embedding generation (best-effort)
+    try:
+        static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+        photo_relatives = [employee.photo_front_path, employee.photo_left_path, employee.photo_right_path]
+        photo_fs_paths = []
+        for rel in photo_relatives:
+            if rel and rel.startswith('/static/'):
+                abs_path = os.path.join(static_root, rel[len('/static/'):].lstrip('/'))
+                photo_fs_paths.append(abs_path)
+        embedding = generate_employee_embedding(employee.id, photo_fs_paths)
+        if embedding:
+            employee.face_embedding = embedding
+            db.add(employee)
+            db.commit()
+            db.refresh(employee)
+    except Exception as e:  # pragma: no cover
+        import logging
+        logging.getLogger("app.employees.create").warning("Failed to generate face embedding for employee_id=%s: %s", employee.id, e)
+
     return filter_employee_for_role(employee, current_user)
 
 
@@ -196,6 +228,16 @@ def update_employee(
     if last_name is not None:
         update_data['last_name'] = last_name
     if email is not None:
+        # Validate email format if provided
+        def _validate_email(value: str):
+            if not value or '@' not in value or value.count('@') != 1:
+                raise HTTPException(status_code=422, detail="Invalid email format")
+            local, domain = value.split('@', 1)
+            if not local or not domain or '.' not in domain:
+                raise HTTPException(status_code=422, detail="Invalid email format")
+            if domain.startswith('.') or domain.endswith('.'):
+                raise HTTPException(status_code=422, detail="Invalid email format")
+        _validate_email(email)
         # Check email uniqueness if updating email
         if email != employee.email:
             existing_employee = crud_employee.get_employee_by_email(db, email=email)
@@ -233,10 +275,28 @@ def update_employee(
             db=db, employee_id=employee.id, employee_update=employee_update
         )
     
-    # Update photos if provided
+    # Update photos if provided (and recompute embedding)
     if photo_front or photo_left or photo_right:
         update_employee_photos(db, employee, photo_front, photo_left, photo_right)
         db.refresh(employee)
+        # Recompute embedding
+        try:
+            static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+            photo_relatives = [employee.photo_front_path, employee.photo_left_path, employee.photo_right_path]
+            photo_fs_paths = []
+            for rel in photo_relatives:
+                if rel and rel.startswith('/static/'):
+                    abs_path = os.path.join(static_root, rel[len('/static/'):].lstrip('/'))
+                    photo_fs_paths.append(abs_path)
+            embedding = generate_employee_embedding(employee.id, photo_fs_paths)
+            if embedding:
+                employee.face_embedding = embedding
+                db.add(employee)
+                db.commit()
+                db.refresh(employee)
+        except Exception as e:  # pragma: no cover
+            import logging
+            logging.getLogger("app.employees.update").warning("Failed to regenerate face embedding for employee_id=%s: %s", employee.id, e)
     
     return filter_employee_for_role(employee, current_user)
 

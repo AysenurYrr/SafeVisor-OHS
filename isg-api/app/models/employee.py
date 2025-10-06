@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Date
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -27,7 +28,9 @@ class Employee(Base):
     photo_front_path = Column(String(500), nullable=True)
     photo_left_path = Column(String(500), nullable=True)
     photo_right_path = Column(String(500), nullable=True)
-    face_encoding = Column(Text, nullable=True)  # JSON string for face recognition
+    face_encoding = Column(Text, nullable=True)  # Deprecated string encoding (legacy)
+    # Averaged face embedding vector (list[float]) computed from profile photos
+    face_embedding = Column(JSONB, nullable=True)
     violation_score = Column(Integer, default=0, nullable=False)  # Track violation count/score
     is_active = Column(Boolean, default=True)
     notes = Column(Text, nullable=True)
