@@ -314,3 +314,41 @@ export const UsersAPI = {
     return response.data
   }
 }
+
+// Factory Areas API
+export const FactoryAreasAPI = {
+  async list(skip = 0, limit = 100, is_active = null, search = null) {
+    let url = `/api/v1/factory-areas/?skip=${skip}&limit=${limit}`
+    if (is_active !== null) url += `&is_active=${is_active}`
+    if (search) url += `&search=${encodeURIComponent(search)}`
+    
+    const response = await api.get(url)
+    return response.data
+  },
+
+  async get(id) {
+    const response = await api.get(`/api/v1/factory-areas/${id}`)
+    return response.data
+  },
+
+  async create(areaData) {
+    const response = await api.post('/api/v1/factory-areas/', areaData)
+    return response.data
+  },
+
+  async update(id, areaData) {
+    const response = await api.put(`/api/v1/factory-areas/${id}`, areaData)
+    return response.data
+  },
+
+  async delete(id) {
+    const response = await api.delete(`/api/v1/factory-areas/${id}`)
+    return response.data
+  },
+
+  async getSafetyRules() {
+    const response = await api.get('/api/v1/factory-areas/safety-rules')
+    return response.data
+  }
+}
+

@@ -35,3 +35,4 @@ class Camera(Base):
     detections = relationship("Detection", back_populates="camera", lazy="select")
     violations = relationship("Violation", back_populates="camera", lazy="select")
     pose_alerts = relationship("PoseAlert", back_populates="camera", lazy="select")
+    factory_areas = relationship("FactoryArea", secondary="area_cameras", back_populates="cameras", lazy="select")

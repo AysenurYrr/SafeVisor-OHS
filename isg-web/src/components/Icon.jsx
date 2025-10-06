@@ -69,8 +69,10 @@ const iconMap = {
   // Actions
   search: MagnifyingGlassIcon,
   add: PlusIcon,
+  plus: PlusIcon,
   edit: PencilIcon,
   delete: TrashIcon,
+  trash: TrashIcon,
   view: EyeIcon,
   logout: ArrowRightOnRectangleIcon,
   menu: Bars3Icon,

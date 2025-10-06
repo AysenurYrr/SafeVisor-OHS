@@ -1,0 +1,181 @@
+from typing import Optional, List
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, text
+from app.models.factory_area import FactoryArea, area_cameras, area_rules
+from app.models.camera import Camera
+from app.schemas.factory_area import FactoryAreaCreate, FactoryAreaUpdate
+
+
+def get_factory_area(db: Session, area_id: int) -> Optional[FactoryArea]:
+    """Get factory area by ID"""
+    return db.query(FactoryArea).filter(FactoryArea.id == area_id).first()
+
+
+def get_factory_area_by_name(db: Session, name: str) -> Optional[FactoryArea]:
+    """Get factory area by name"""
+    return db.query(FactoryArea).filter(FactoryArea.name == name).first()
+
+
+def get_factory_areas(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    is_active: Optional[bool] = None,
+    search: Optional[str] = None
+) -> List[FactoryArea]:
+    """Get multiple factory areas with optional filters"""
+    query = db.query(FactoryArea)
+    
+    if is_active is not None:
+        query = query.filter(FactoryArea.is_active == is_active)
+    
+    if search:
+        search_filter = or_(
+            FactoryArea.name.ilike(f"%{search}%"),
+            FactoryArea.description.ilike(f"%{search}%")
+        )
+        query = query.filter(search_filter)
+    
+    return query.offset(skip).limit(limit).all()
+
+
+def count_factory_areas(
+    db: Session,
+    is_active: Optional[bool] = None,
+    search: Optional[str] = None
+) -> int:
+    """Count factory areas with optional filters"""
+    query = db.query(FactoryArea)
+    
+    if is_active is not None:
+        query = query.filter(FactoryArea.is_active == is_active)
+    
+    if search:
+        search_filter = or_(
+            FactoryArea.name.ilike(f"%{search}%"),
+            FactoryArea.description.ilike(f"%{search}%")
+        )
+        query = query.filter(search_filter)
+    
+    return query.count()
+
+
+def get_area_safety_rules(db: Session, area_id: int) -> List[str]:
+    """Get safety rules for a factory area"""
+    result = db.execute(
+        text("SELECT rule_name FROM area_rules WHERE area_id = :area_id"),
+        {"area_id": area_id}
+    )
+    return [row[0] for row in result.fetchall()]
+
+
+def create_factory_area(
+    db: Session, 
+    area: FactoryAreaCreate, 
+    created_by: int
+) -> FactoryArea:
+    """Create new factory area"""
+    db_area = FactoryArea(
+        name=area.name,
+        description=area.description,
+        is_active=area.is_active,
+        created_by=created_by
+    )
+    db.add(db_area)
+    db.flush()  # Get the ID without committing
+    
+    # Add cameras
+    if area.camera_ids:
+        cameras = db.query(Camera).filter(Camera.id.in_(area.camera_ids)).all()
+        db_area.cameras = cameras
+    
+    # Add safety rules
+    if area.safety_rules:
+        for rule in area.safety_rules:
+            db.execute(
+                text("INSERT INTO area_rules (area_id, rule_name) VALUES (:area_id, :rule_name)"),
+                {"area_id": db_area.id, "rule_name": rule}
+            )
+    
+    db.commit()
+    db.refresh(db_area)
+    return db_area
+
+
+def update_factory_area(
+    db: Session, 
+    area_id: int, 
+    area_update: FactoryAreaUpdate
+) -> Optional[FactoryArea]:
+    """Update factory area"""
+    db_area = get_factory_area(db, area_id)
+    if not db_area:
+        return None
+    
+    update_data = area_update.dict(exclude_unset=True, exclude={'camera_ids', 'safety_rules'})
+    
+    # Update basic fields
+    for field, value in update_data.items():
+        setattr(db_area, field, value)
+    
+    # Update cameras if provided
+    if area_update.camera_ids is not None:
+        cameras = db.query(Camera).filter(Camera.id.in_(area_update.camera_ids)).all()
+        db_area.cameras = cameras
+    
+    # Update safety rules if provided
+    if area_update.safety_rules is not None:
+        # Remove existing rules
+        db.execute(
+            text("DELETE FROM area_rules WHERE area_id = :area_id"),
+            {"area_id": area_id}
+        )
+        # Add new rules
+        for rule in area_update.safety_rules:
+            db.execute(
+                text("INSERT INTO area_rules (area_id, rule_name) VALUES (:area_id, :rule_name)"),
+                {"area_id": area_id, "rule_name": rule}
+            )
+    
+    db.commit()
+    db.refresh(db_area)
+    return db_area
+
+
+def delete_factory_area(db: Session, area_id: int) -> bool:
+    """Delete factory area (soft delete by setting is_active to False)"""
+    db_area = get_factory_area(db, area_id)
+    if not db_area:
+        return False
+    
+    db_area.is_active = False
+    db.commit()
+    return True
+
+
+def hard_delete_factory_area(db: Session, area_id: int) -> bool:
+    """Permanently delete factory area"""
+    db_area = get_factory_area(db, area_id)
+    if not db_area:
+        return False
+    
+    # Delete associated rules (should cascade, but being explicit)
+    db.execute(
+        text("DELETE FROM area_rules WHERE area_id = :area_id"),
+        {"area_id": area_id}
+    )
+    # Delete associated cameras mapping explicitly (in case DB FK cascade not enforced)
+    db.execute(
+        text("DELETE FROM area_cameras WHERE area_id = :area_id"),
+        {"area_id": area_id}
+    )
+    
+    # Delete the area
+    db.delete(db_area)
+    db.commit()
+    return True
+
+
+def get_active_factory_areas(db: Session) -> List[FactoryArea]:
+    """Get all active factory areas"""
+    return db.query(FactoryArea).filter(FactoryArea.is_active == True).all()

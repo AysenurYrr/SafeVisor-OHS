@@ -74,6 +74,9 @@ export default function Sidebar({ open }) {
               <NavItem to="/cameras" icon="cameras">
                 Cameras
               </NavItem>
+              <NavItem to="/factory-areas" icon="building">
+                Factory Areas
+              </NavItem>
             </NavSection>
 
             <NavSection title="Safety Events">
@@ -127,6 +130,17 @@ export default function Sidebar({ open }) {
               title="Cameras"
             >
               <Icon name="cameras" className="w-6 h-6" />
+            </NavLink>
+            <NavLink
+              to="/factory-areas"
+              className={({ isActive }) => 
+                `flex items-center justify-center p-3 rounded-lg transition-colors ${
+                  isActive ? 'bg-primary-50 text-primary-600' : 'text-neutral-600 hover:bg-neutral-100'
+                }`
+              }
+              title="Factory Areas"
+            >
+              <Icon name="building" className="w-6 h-6" />
             </NavLink>
             <NavLink
               to="/events/violations"
