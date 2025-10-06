@@ -24,6 +24,9 @@ import {
   CheckCircleIcon,
   ClockIcon,
   InformationCircleIcon,
+  ExclamationCircleIcon,
+  PlayIcon,
+  StopIcon,
   // Dashboard icons
   UserIcon,
   BuildingOfficeIcon,
@@ -92,6 +95,9 @@ const iconMap = {
   'clock-solid': ClockSolid,
   info: InformationCircleIcon,
   'info-solid': InformationCircleSolid,
+  alert: ExclamationCircleIcon,
+  play: PlayIcon,
+  stop: StopIcon,
   
   // Data
   person: UserIcon,
