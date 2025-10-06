@@ -23,7 +23,12 @@ class Employee(Base):
     emergency_contact = Column(String(255), nullable=True)
     emergency_phone = Column(String(20), nullable=True)
     photo_url = Column(String(500), nullable=True)
+    # Three required profile photos
+    photo_front_path = Column(String(500), nullable=True)
+    photo_left_path = Column(String(500), nullable=True)
+    photo_right_path = Column(String(500), nullable=True)
     face_encoding = Column(Text, nullable=True)  # JSON string for face recognition
+    violation_score = Column(Integer, default=0, nullable=False)  # Track violation count/score
     is_active = Column(Boolean, default=True)
     notes = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)

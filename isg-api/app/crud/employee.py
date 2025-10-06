@@ -113,7 +113,11 @@ def create_employee(db: Session, employee: EmployeeCreate, created_by: int) -> E
         emergency_contact=employee.emergency_contact,
         emergency_phone=employee.emergency_phone,
         photo_url=employee.photo_url,
+        photo_front_path=employee.photo_front_path,
+        photo_left_path=employee.photo_left_path,
+        photo_right_path=employee.photo_right_path,
         face_encoding=employee.face_encoding,
+        violation_score=employee.violation_score,
         is_active=employee.is_active,
         notes=employee.notes,
         created_by=created_by

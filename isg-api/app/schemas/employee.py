@@ -17,6 +17,10 @@ class EmployeeBase(BaseModel):
     emergency_contact: Optional[str] = None
     emergency_phone: Optional[str] = None
     photo_url: Optional[str] = None
+    photo_front_path: Optional[str] = None
+    photo_left_path: Optional[str] = None
+    photo_right_path: Optional[str] = None
+    violation_score: int = 0
     is_active: bool = True
     notes: Optional[str] = None
 
@@ -44,7 +48,11 @@ class EmployeeUpdate(BaseModel):
     emergency_contact: Optional[str] = None
     emergency_phone: Optional[str] = None
     photo_url: Optional[str] = None
+    photo_front_path: Optional[str] = None
+    photo_left_path: Optional[str] = None
+    photo_right_path: Optional[str] = None
     face_encoding: Optional[str] = None
+    violation_score: Optional[int] = None
     is_active: Optional[bool] = None
     notes: Optional[str] = None
 
