@@ -80,6 +80,20 @@ export default function Employees() {
     setList(list.map(emp => emp.id === updated.id ? updated : emp))
   }
 
+  const handleDeleteEmployee = async (employee) => {
+    if (!window.confirm(`Are you sure you want to delete ${employee.first_name} ${employee.last_name}?`)) {
+      return
+    }
+    
+    try {
+      await EmployeesAPI.delete(employee.uuid)
+      setList(list.filter(emp => emp.id !== employee.id))
+    } catch (e) {
+      console.error('Failed to delete employee', e)
+      alert('Failed to delete employee: ' + (e.response?.data?.detail || e.message))
+    }
+  }
+
   const handleViewEmployee = (employee) => {
     // TODO: Implement view employee details
     console.log('View employee:', employee)
@@ -168,6 +182,12 @@ export default function Employees() {
       title: 'Edit Employee',
       onClick: handleEditEmployee,
       className: 'text-neutral-600 hover:text-neutral-700'
+    } : null,
+    canManage ? {
+      icon: 'delete',
+      title: 'Delete Employee',
+      onClick: handleDeleteEmployee,
+      className: 'text-danger-600 hover:text-danger-700'
     } : null
   ]
 
