@@ -10,6 +10,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
 import Cameras from './pages/Cameras'
+import FactoryAreas from './pages/FactoryAreas'
 import Violations from './pages/Events/Violations'
 import Pose from './pages/Events/Pose'
 import Users from './pages/Admin/Users'
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/employees" element={<Employees />} />
             <Route path="/cameras" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><Cameras /></PrivateRoute>} />
+            <Route path="/factory-areas" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><FactoryAreas /></PrivateRoute>} />
             <Route path="/events/violations" element={<Violations />} />
             <Route path="/events/pose" element={<Pose />} />
             <Route path="/admin/users" element={<PrivateRoute allowedRoles={["Admin (IT)"]}><Users /></PrivateRoute>} />
