@@ -43,3 +43,4 @@ class User(Base):
     refresh_tokens = relationship("RefreshToken", backref="user", lazy="select")
     created_employees = relationship("Employee", back_populates="created_by_user", lazy="select")
     created_cameras = relationship("Camera", back_populates="created_by_user", lazy="select")
+    created_factory_areas = relationship("FactoryArea", back_populates="created_by_user", lazy="select")
