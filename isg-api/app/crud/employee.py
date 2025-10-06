@@ -15,11 +15,15 @@ def get_employee_by_uuid(db: Session, employee_uuid: str) -> Optional[Employee]:
     """Get employee by UUID"""
     try:
         # Handle both string and UUID types
+        # Convert to UUID object for validation, but use string for query to handle both UUID and VARCHAR columns
         if isinstance(employee_uuid, str):
-            uuid_obj = uuid_lib.UUID(employee_uuid)
+            # Validate it's a proper UUID
+            uuid_lib.UUID(employee_uuid)
+            # Use string comparison to work with both VARCHAR and UUID column types
+            return db.query(Employee).filter(Employee.uuid == employee_uuid).first()
         else:
-            uuid_obj = employee_uuid
-        return db.query(Employee).filter(Employee.uuid == uuid_obj).first()
+            # If it's already a UUID object, convert to string
+            return db.query(Employee).filter(Employee.uuid == str(employee_uuid)).first()
     except (ValueError, TypeError):
         return None
 
