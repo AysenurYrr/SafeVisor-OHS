@@ -336,7 +336,6 @@ export default function Employees() {
             </div>
             <div className="modal-body space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input className="input" placeholder="Employee ID" value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })} />
                 <input className="input" placeholder="First Name *" value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} />
                 <input className="input" placeholder="Last Name *" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
                 <input className="input" placeholder="Email *" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
@@ -440,7 +439,6 @@ export default function Employees() {
                   data.append('first_name', form.first_name)
                   data.append('last_name', form.last_name)
                   data.append('email', form.email)
-                  if (form.employee_id) data.append('employee_id', form.employee_id)
                   if (form.phone) data.append('phone', form.phone)
                   if (form.department) data.append('department', form.department)
                   if (form.position) data.append('position', form.position)
