@@ -5,10 +5,13 @@ from app.db.session import Base  # noqa
 # Import base models first
 from app.models.role import Role  # noqa
 from app.models.user import User  # noqa
+from app.models.department import Department  # noqa
+from app.models.position import Position  # noqa
 
 # Import dependent models
 from app.models.employee import Employee  # noqa
 from app.models.employee import EmployeePhoto  # noqa
+from app.models.employee_log import EmployeeLog  # noqa
 from app.models.camera import Camera  # noqa
 from app.models.factory_area import FactoryArea  # noqa
 from app.models.detection import Detection  # noqa

@@ -17,18 +17,29 @@ class Employee(Base):
     last_name = Column(String(100), nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=True)
     phone = Column(String(20), nullable=True)
-    department = Column(String(100), nullable=False)
-    position = Column(String(100), nullable=False)
+    
+    # Legacy string fields - kept for backward compatibility during migration
+    department = Column(String(100), nullable=True)
+    position = Column(String(100), nullable=True)
+    
+    # New FK relationships to departments and positions tables
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
+    position_id = Column(Integer, ForeignKey("positions.id", ondelete="SET NULL"), nullable=True, index=True)
+    
     hire_date = Column(Date, nullable=False)
     birth_date = Column(Date, nullable=True)
     emergency_contact = Column(String(255), nullable=True)
     emergency_phone = Column(String(20), nullable=True)
-    photo_url = Column(String(500), nullable=True)
+    
     # Three required profile photos
     photo_front_path = Column(String(500), nullable=True)
     photo_left_path = Column(String(500), nullable=True)
     photo_right_path = Column(String(500), nullable=True)
-    face_encoding = Column(Text, nullable=True)  # Deprecated string encoding (legacy)
+    
+    # Deprecated fields - will be removed in future migration
+    photo_url = Column(String(500), nullable=True)  # Deprecated: Use photo_front_path, photo_left_path, photo_right_path
+    face_encoding = Column(Text, nullable=True)  # Deprecated: Use face_embedding instead
+    
     # Averaged face embedding vector (list[float]) computed from profile photos
     face_embedding = Column(JSONB, nullable=True)
     violation_score = Column(Integer, default=0, nullable=False)  # Track violation count/score
@@ -40,9 +51,12 @@ class Employee(Base):
 
     # Relationships
     created_by_user = relationship("User", back_populates="created_employees", lazy="select")
+    department_rel = relationship("Department", back_populates="employees", lazy="select")
+    position_rel = relationship("Position", back_populates="employees", lazy="select")
     violations = relationship("Violation", back_populates="employee", lazy="select")
     pose_alerts = relationship("PoseAlert", back_populates="employee", lazy="select")
     photos = relationship("EmployeePhoto", back_populates="employee", cascade="all, delete-orphan", lazy="select")
+    logs = relationship("EmployeeLog", back_populates="employee", cascade="all, delete-orphan", lazy="select")
 
 
 class EmployeePhoto(Base):

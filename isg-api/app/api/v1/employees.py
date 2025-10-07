@@ -4,6 +4,7 @@ import os
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.crud import employee as crud_employee
+from app.crud import employee_log as crud_employee_log
 from app.models.user import User
 from app.schemas.employee import (
     EmployeeCreate, 
@@ -80,8 +81,10 @@ def create_employee(
     last_name: str = Form(...),
     email: str = Form(...),
     phone: Optional[str] = Form(None),
-    position: Optional[str] = Form(None),
-    department: Optional[str] = Form(None),
+    position: Optional[str] = Form(None),  # Legacy string field
+    department: Optional[str] = Form(None),  # Legacy string field
+    department_id: Optional[int] = Form(None),  # New FK field
+    position_id: Optional[int] = Form(None),  # New FK field
     hire_date: Optional[str] = Form(None),
     birth_date: Optional[str] = Form(None),
     emergency_contact: Optional[str] = Form(None),
@@ -94,6 +97,7 @@ def create_employee(
     """
     Create new employee (Admin only)
     Requires 3 photos: front, left, and right profile
+    Supports both legacy string fields (department, position) and new FK fields (department_id, position_id)
     """
     # Basic email format validation
     def _validate_email(value: str):
@@ -143,11 +147,28 @@ def create_employee(
         db=db, employee=emp_create, created_by=current_user.id
     )
 
+    # Update with FK fields if provided
+    if department_id is not None:
+        employee.department_id = department_id
+    if position_id is not None:
+        employee.position_id = position_id
+    db.commit()
+    db.refresh(employee)
+
     # Save the 3 required photos
     save_employee_photos_required(db, employee, photo_front, photo_left, photo_right)
 
     # Refresh to get updated photo paths
     db.refresh(employee)
+
+    # Log employee creation
+    crud_employee_log.log_employee_action(
+        db=db,
+        employee_id=employee.id,
+        action="created",
+        actor_id=current_user.id,
+        details={"employee_id": employee.employee_id, "name": f"{first_name} {last_name}"}
+    )
 
     # Queue background embedding generation (non-blocking)
     def _bg_embed(emp_id: int):  # pragma: no cover (background task side-effects)
@@ -225,8 +246,10 @@ def update_employee(
     last_name: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
-    position: Optional[str] = Form(None),
-    department: Optional[str] = Form(None),
+    position: Optional[str] = Form(None),  # Legacy string field
+    department: Optional[str] = Form(None),  # Legacy string field
+    department_id: Optional[int] = Form(None),  # New FK field
+    position_id: Optional[int] = Form(None),  # New FK field
     hire_date: Optional[str] = Form(None),
     birth_date: Optional[str] = Form(None),
     emergency_contact: Optional[str] = Form(None),
@@ -240,6 +263,7 @@ def update_employee(
     """
     Update an employee by UUID (Admin only)
     Photos can be optionally updated
+    Supports both legacy string fields and new FK fields
     """
     employee = crud_employee.get_employee_by_uuid(db, employee_uuid=employee_uuid)
     if not employee:
@@ -295,11 +319,39 @@ def update_employee(
     if is_active is not None:
         update_data['is_active'] = is_active
     
+    # Track changes for logging
+    changed_fields = list(update_data.keys())
+    
     # Apply updates
     if update_data:
         employee_update = EmployeeUpdate(**update_data)
         employee = crud_employee.update_employee(
             db=db, employee_id=employee.id, employee_update=employee_update
+        )
+    
+    # Update FK fields if provided
+    if department_id is not None:
+        employee.department_id = department_id
+        changed_fields.append('department_id')
+    if position_id is not None:
+        employee.position_id = position_id
+        changed_fields.append('position_id')
+    
+    if department_id is not None or position_id is not None:
+        db.commit()
+        db.refresh(employee)
+    
+    # Log employee update
+    if changed_fields or photo_front or photo_left or photo_right:
+        log_details = {"changed_fields": changed_fields}
+        if photo_front or photo_left or photo_right:
+            log_details["photos_updated"] = True
+        crud_employee_log.log_employee_action(
+            db=db,
+            employee_id=employee.id,
+            action="updated",
+            actor_id=current_user.id,
+            details=log_details
         )
     
     # Update photos if provided (and recompute embedding)
@@ -365,6 +417,15 @@ def delete_employee(
             status_code=404,
             detail="Employee not found"
         )
+    
+    # Log employee deletion before deleting
+    crud_employee_log.log_employee_action(
+        db=db,
+        employee_id=employee.id,
+        action="deleted",
+        actor_id=current_user.id,
+        details={"employee_id": employee.employee_id, "name": f"{employee.first_name} {employee.last_name}"}
+    )
     
     success = crud_employee.delete_employee(db, employee_id=employee.id)
     if not success:
