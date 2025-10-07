@@ -183,6 +183,80 @@ export const EmployeesAPI = {
   }
 }
 
+// Departments API
+export const DepartmentsAPI = {
+  async list(skip = 0, limit = 100, is_active = null, search = null) {
+    let url = `/api/v1/departments/?skip=${skip}&limit=${limit}`
+    if (is_active !== null) url += `&is_active=${is_active}`
+    if (search) url += `&search=${encodeURIComponent(search)}`
+    const response = await api.get(url)
+    return response.data
+  },
+
+  async get(id) {
+    const response = await api.get(`/api/v1/departments/${id}`)
+    return response.data
+  },
+
+  async create(departmentData) {
+    const response = await api.post('/api/v1/departments/', departmentData)
+    return response.data
+  },
+
+  async update(id, departmentData) {
+    const response = await api.put(`/api/v1/departments/${id}`, departmentData)
+    return response.data
+  },
+
+  async delete(id) {
+    const response = await api.delete(`/api/v1/departments/${id}`)
+    return response.data
+  }
+}
+
+// Positions API
+export const PositionsAPI = {
+  async list(skip = 0, limit = 100, department_id = null, is_active = null, search = null) {
+    let url = `/api/v1/positions/?skip=${skip}&limit=${limit}`
+    if (department_id) url += `&department_id=${department_id}`
+    if (is_active !== null) url += `&is_active=${is_active}`
+    if (search) url += `&search=${encodeURIComponent(search)}`
+    const response = await api.get(url)
+    return response.data
+  },
+
+  async get(id) {
+    const response = await api.get(`/api/v1/positions/${id}`)
+    return response.data
+  },
+
+  async create(positionData) {
+    const response = await api.post('/api/v1/positions/', positionData)
+    return response.data
+  },
+
+  async update(id, positionData) {
+    const response = await api.put(`/api/v1/positions/${id}`, positionData)
+    return response.data
+  },
+
+  async delete(id) {
+    const response = await api.delete(`/api/v1/positions/${id}`)
+    return response.data
+  }
+}
+
+// Employee Logs API
+export const EmployeeLogsAPI = {
+  async list(skip = 0, limit = 100, employee_id = null, action = null) {
+    let url = `/api/v1/employee-logs/?skip=${skip}&limit=${limit}`
+    if (employee_id) url += `&employee_id=${employee_id}`
+    if (action) url += `&action=${encodeURIComponent(action)}`
+    const response = await api.get(url)
+    return response.data
+  }
+}
+
 // Cameras API
 export const CamerasAPI = {
   async list(skip = 0, limit = 100) {

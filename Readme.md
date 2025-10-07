@@ -51,6 +51,7 @@ docker compose up -d
 - See `isg-api/README.md` for API details
 - See `isg-web/README.md` for frontend details
 
+docker exec -it isg-api alembic current
 
 ## Sıfırdan
 1. terminal

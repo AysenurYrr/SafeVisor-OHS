@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import Button from './Button'
 import Icon from './Icon'
-import { EmployeesAPI } from '../services/api'
+import { EmployeesAPI, DepartmentsAPI, PositionsAPI } from '../services/api'
 
 export default function EditEmployeeModal({ employee, onClose, onUpdate }) {
   const [form, setForm] = useState({
@@ -9,14 +9,16 @@ export default function EditEmployeeModal({ employee, onClose, onUpdate }) {
     last_name: '',
     email: '',
     phone: '',
-    department: '',
-    position: '',
+    department_id: '',
+    position_id: '',
     hire_date: '',
     emergency_contact: '',
     emergency_phone: '',
     notes: '',
     is_active: true
   })
+  const [departments, setDepartments] = useState([])
+  const [positions, setPositions] = useState([])
   const [files, setFiles] = useState([null, null, null])
   const [filePreviews, setFilePreviews] = useState([null, null, null])
   const [loading, setLoading] = useState(false)
@@ -31,8 +33,8 @@ export default function EditEmployeeModal({ employee, onClose, onUpdate }) {
         last_name: employee.last_name || '',
         email: employee.email || '',
         phone: employee.phone || '',
-        department: employee.department || '',
-        position: employee.position || '',
+  department_id: employee.department_id || '',
+  position_id: employee.position_id || '',
         hire_date: employee.hire_date || '',
         emergency_contact: employee.emergency_contact || '',
         emergency_phone: employee.emergency_phone || '',
@@ -49,6 +51,22 @@ export default function EditEmployeeModal({ employee, onClose, onUpdate }) {
       setFilePreviews(previews)
     }
   }, [employee, API_BASE_URL])
+
+  useEffect(() => {
+    // Load departments and positions for selects
+    (async () => {
+      try {
+        const [deptResp, posResp] = await Promise.all([
+          DepartmentsAPI.list(),
+          PositionsAPI.list()
+        ])
+        setDepartments(deptResp || [])
+        setPositions(posResp || [])
+      } catch (e) {
+        console.warn('Failed to fetch departments/positions', e)
+      }
+    })()
+  }, [])
 
   const handleFileChange = (index, file) => {
     const newFiles = [...files]
@@ -98,7 +116,7 @@ export default function EditEmployeeModal({ employee, onClose, onUpdate }) {
       setError(null)
 
       // Validate required fields
-      if (!form.first_name || !form.last_name || !form.email || !form.department || !form.position) {
+      if (!form.first_name || !form.last_name || !form.email || !form.department_id || !form.position_id) {
         setError('Please fill in all required fields')
         return
       }
@@ -187,21 +205,33 @@ export default function EditEmployeeModal({ employee, onClose, onUpdate }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1">Department *</label>
-              <input 
+              <select 
                 className="input" 
-                value={form.department} 
-                onChange={e => setForm({ ...form, department: e.target.value })} 
+                value={form.department_id}
+                onChange={e => setForm({ ...form, department_id: e.target.value, position_id: '' })}
                 disabled={loading}
-              />
+              >
+                <option value="">Select Department</option>
+                {departments.filter(d => d.is_active !== false).map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1">Position *</label>
-              <input 
+              <select 
                 className="input" 
-                value={form.position} 
-                onChange={e => setForm({ ...form, position: e.target.value })} 
-                disabled={loading}
-              />
+                value={form.position_id}
+                onChange={e => setForm({ ...form, position_id: e.target.value })}
+                disabled={loading || !form.department_id}
+              >
+                <option value="">{form.department_id ? 'Select Position' : 'Select Department First'}</option>
+                {positions
+                  .filter(p => p.is_active !== false && (!form.department_id || p.department_id === Number(form.department_id)))
+                  .map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-1">Hire Date</label>

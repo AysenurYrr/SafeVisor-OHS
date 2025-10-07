@@ -4,7 +4,7 @@ import os
 import logging
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1 import auth, users, employees, cameras, violations, pose_alerts, detections, factory_areas, live_camera
+from app.api.v1 import auth, users, employees, cameras, violations, pose_alerts, detections, factory_areas, live_camera, departments, positions, employee_logs
 """
 Ensure all SQLAlchemy models are imported so that relationships using
 string references (e.g., "PoseAlert") can be resolved during mapper
@@ -137,6 +137,9 @@ app.include_router(auth.router, prefix="/auth", tags=["authentication"])
 app.include_router(auth.router, prefix="/api/v1/users", tags=["users-auth"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(employees.router, prefix="/api/v1/employees", tags=["employees"])
+app.include_router(departments.router, prefix="/api/v1/departments", tags=["departments"])
+app.include_router(positions.router, prefix="/api/v1/positions", tags=["positions"])
+app.include_router(employee_logs.router, prefix="/api/v1/employee-logs", tags=["employee-logs"])
 app.include_router(cameras.router, prefix="/api/v1/cameras", tags=["cameras"])
 app.include_router(factory_areas.router, prefix="/api/v1/factory-areas", tags=["factory-areas"])
 app.include_router(violations.router, prefix="/api/v1/violations", tags=["violations"])
@@ -234,30 +237,99 @@ def _seed_defaults():
         ensure_user("hse@isg.com", "hse123", "HSE Expert", "HSE_EXPERT")
         ensure_user("it@isg.com", "it123", "IT Admin", "IT_ADMIN")
 
-        # Seed some employees if table is empty
-        if db.query(Employee).count() == 0:
-            from datetime import date
-            samples = [
-                {"employee_id": "EM-1001", "first_name": "John", "last_name": "Doe", "email": "john.doe@company.com", "department": "Manufacturing", "position": "Floor Supervisor"},
-                {"employee_id": "EM-1002", "first_name": "Jane", "last_name": "Smith", "email": "jane.smith@company.com", "department": "Safety", "position": "HSE Officer"},
-                {"employee_id": "EM-1003", "first_name": "Mike", "last_name": "Johnson", "email": "mike.johnson@company.com", "department": "Quality Control", "position": "Inspector"},
+        # Seed departments and positions if tables are empty
+        from app.models.department import Department
+        from app.models.position import Position
+        
+        if db.query(Department).count() == 0:
+            # Create sample departments
+            departments_data = [
+                {"name": "Manufacturing", "description": "Manufacturing and Production"},
+                {"name": "Safety", "description": "Health, Safety and Environment"},
+                {"name": "Quality Control", "description": "Quality Assurance and Control"},
+                {"name": "Maintenance", "description": "Equipment Maintenance"},
             ]
-            admin = db.query(User).filter(User.email == "admin@isg.com").first()
-            for s in samples:
-                emp = Employee(
-                    employee_id=s["employee_id"],
-                    first_name=s["first_name"],
-                    last_name=s["last_name"],
-                    email=s["email"],
-                    phone=None,
-                    department=s.get("department") or "",
-                    position=s.get("position") or "",
-                    hire_date=date.today(),
-                    created_by=admin.id if admin else 1,
-                    is_active=True,
+            
+            dept_map = {}
+            for dept_data in departments_data:
+                dept = Department(
+                    name=dept_data["name"],
+                    description=dept_data["description"],
+                    is_active=True
                 )
-                db.add(emp)
-            db.commit()
+                db.add(dept)
+                db.commit()
+                db.refresh(dept)
+                dept_map[dept.name] = dept
+            
+            # Create sample positions
+            positions_data = [
+                {"name": "Floor Supervisor", "department": "Manufacturing"},
+                {"name": "Machine Operator", "department": "Manufacturing"},
+                {"name": "HSE Officer", "department": "Safety"},
+                {"name": "Quality Inspector", "department": "Quality Control"},
+                {"name": "Maintenance Technician", "department": "Maintenance"},
+            ]
+            
+            pos_map = {}
+            for pos_data in positions_data:
+                dept = dept_map.get(pos_data["department"])
+                pos = Position(
+                    name=pos_data["name"],
+                    department_id=dept.id if dept else None,
+                    is_active=True
+                )
+                db.add(pos)
+                db.commit()
+                db.refresh(pos)
+                pos_map[pos.name] = pos
+            
+            # Create sample employees with FK relationships (no duplicate John Doe)
+            if db.query(Employee).count() == 0:
+                from datetime import date
+                admin = db.query(User).filter(User.email == "admin@isg.com").first()
+                
+                # Create diverse sample employees
+                samples = [
+                    {
+                        "employee_id": "EM-2001",
+                        "first_name": "Sarah",
+                        "last_name": "Williams",
+                        "email": "sarah.williams@company.com",
+                        "position": "Floor Supervisor"
+                    },
+                    {
+                        "employee_id": "EM-2002",
+                        "first_name": "Michael",
+                        "last_name": "Chen",
+                        "email": "michael.chen@company.com",
+                        "position": "HSE Officer"
+                    },
+                    {
+                        "employee_id": "EM-2003",
+                        "first_name": "Emily",
+                        "last_name": "Rodriguez",
+                        "email": "emily.rodriguez@company.com",
+                        "position": "Quality Inspector"
+                    },
+                ]
+                
+                for s in samples:
+                    pos = pos_map.get(s["position"])
+                    emp = Employee(
+                        employee_id=s["employee_id"],
+                        first_name=s["first_name"],
+                        last_name=s["last_name"],
+                        email=s["email"],
+                        phone=None,
+                        department_id=pos.department_id if pos else None,
+                        position_id=pos.id if pos else None,
+                        hire_date=date.today(),
+                        created_by=admin.id if admin else 1,
+                        is_active=True,
+                    )
+                    db.add(emp)
+                db.commit()
     finally:
         db.close()
 

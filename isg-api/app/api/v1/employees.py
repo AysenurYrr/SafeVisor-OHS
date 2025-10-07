@@ -4,6 +4,7 @@ import os
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.crud import employee as crud_employee
+from app.crud import employee_log as crud_employee_log
 from app.models.user import User
 from app.schemas.employee import (
     EmployeeCreate, 
@@ -12,6 +13,8 @@ from app.schemas.employee import (
     EmployeeListResponse
 )
 from app.models.employee import Employee, EmployeePhoto
+from app.models.department import Department
+from app.models.position import Position
 from app.services.face_embedding_service import generate_employee_embedding
 from app.services.face_embedding_service import facenet_available as embeddings_facenet_available
 
@@ -60,6 +63,17 @@ def read_employees(
         e2.status = "active" if getattr(e2, "is_active", True) else "inactive"
         # Placeholder last_activity; in real system, use last pose/violation/etc.
         e2.last_activity = e2.updated_at.isoformat() if getattr(e2, "updated_at", None) else "Never"
+        # Enrich FK info (safe even if None)
+        try:
+            e2.department_id = getattr(e, 'department_id', None)
+            e2.position_id = getattr(e, 'position_id', None)
+            # Relationship names if loaded
+            if hasattr(e, 'department_rel') and e.department_rel:
+                e2.department_name = getattr(e.department_rel, 'name', None)
+            if hasattr(e, 'position_rel') and e.position_rel:
+                e2.position_name = getattr(e.position_rel, 'name', None)
+        except Exception:
+            pass
         enriched.append(e2)
 
     return EmployeeListResponse(
@@ -80,8 +94,8 @@ def create_employee(
     last_name: str = Form(...),
     email: str = Form(...),
     phone: Optional[str] = Form(None),
-    position: Optional[str] = Form(None),
-    department: Optional[str] = Form(None),
+    department_id: Optional[int] = Form(None),  # New FK field
+    position_id: Optional[int] = Form(None),  # New FK field
     hire_date: Optional[str] = Form(None),
     birth_date: Optional[str] = Form(None),
     emergency_contact: Optional[str] = Form(None),
@@ -94,6 +108,7 @@ def create_employee(
     """
     Create new employee (Admin only)
     Requires 3 photos: front, left, and right profile
+    Supports both legacy string fields (department, position) and new FK fields (department_id, position_id)
     """
     # Basic email format validation
     def _validate_email(value: str):
@@ -122,18 +137,17 @@ def create_employee(
     # Build minimal create payload using existing schema
     from datetime import date
     emp_create = EmployeeCreate(
-        employee_id=f"EM-{int(os.urandom(3).hex(), 16)}",  # temporary ID
+        employee_id=f"EM-{int(os.urandom(3).hex(), 16)}",
         first_name=first_name,
         last_name=last_name,
         email=email,
         phone=phone,
-        department=department or "",
-        position=position or "",
+        department_id=department_id,
+        position_id=position_id,
         hire_date=date.today() if not hire_date else date.fromisoformat(hire_date),
         birth_date=date.fromisoformat(birth_date) if birth_date else None,
         emergency_contact=emergency_contact,
         emergency_phone=emergency_phone,
-        face_encoding=None,
         violation_score=0,
         is_active=True,
         notes=notes,
@@ -143,11 +157,25 @@ def create_employee(
         db=db, employee=emp_create, created_by=current_user.id
     )
 
+    # Update with FK fields if provided
+    # Already set in create payload; ensure commit reflects FKs
+    db.commit()
+    db.refresh(employee)
+
     # Save the 3 required photos
     save_employee_photos_required(db, employee, photo_front, photo_left, photo_right)
 
     # Refresh to get updated photo paths
     db.refresh(employee)
+
+    # Log employee creation
+    crud_employee_log.log_employee_action(
+        db=db,
+        employee_id=employee.id,
+        action="created",
+        actor_id=current_user.id,
+        details={"employee_id": employee.employee_id, "name": f"{first_name} {last_name}"}
+    )
 
     # Queue background embedding generation (non-blocking)
     def _bg_embed(emp_id: int):  # pragma: no cover (background task side-effects)
@@ -192,7 +220,26 @@ def create_employee(
 
     background_tasks.add_task(_bg_embed, employee.id)
 
-    return filter_employee_for_role(employee, current_user)
+    # Enrich single employee response similarly to list endpoint for immediate frontend refresh
+    enriched = filter_employee_for_role(employee, current_user)
+    try:
+        enriched.status = "active" if getattr(enriched, "is_active", True) else "inactive"
+        enriched.last_activity = enriched.updated_at.isoformat() if getattr(enriched, "updated_at", None) else "Never"
+        # Attach FK ids explicitly
+        enriched.department_id = getattr(employee, 'department_id', None)
+        enriched.position_id = getattr(employee, 'position_id', None)
+        if enriched.department_id:
+            dept = db.query(Department).filter(Department.id == enriched.department_id).first()
+            if dept:
+                enriched.department_name = dept.name
+        if enriched.position_id:
+            pos = db.query(Position).filter(Position.id == enriched.position_id).first()
+            if pos:
+                enriched.position_name = pos.name
+    except Exception:
+        pass
+    return enriched
+    # (Single employee endpoint enrichment could be added similarly if needed)
 
 
 @router.get("/{employee_uuid}", response_model=EmployeeResponse)
@@ -225,8 +272,8 @@ def update_employee(
     last_name: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
-    position: Optional[str] = Form(None),
-    department: Optional[str] = Form(None),
+    department_id: Optional[int] = Form(None),  # New FK field
+    position_id: Optional[int] = Form(None),  # New FK field
     hire_date: Optional[str] = Form(None),
     birth_date: Optional[str] = Form(None),
     emergency_contact: Optional[str] = Form(None),
@@ -240,6 +287,7 @@ def update_employee(
     """
     Update an employee by UUID (Admin only)
     Photos can be optionally updated
+    Supports both legacy string fields and new FK fields
     """
     employee = crud_employee.get_employee_by_uuid(db, employee_uuid=employee_uuid)
     if not employee:
@@ -276,10 +324,6 @@ def update_employee(
         update_data['email'] = email
     if phone is not None:
         update_data['phone'] = phone
-    if position is not None:
-        update_data['position'] = position
-    if department is not None:
-        update_data['department'] = department
     if hire_date is not None:
         from datetime import date
         update_data['hire_date'] = date.fromisoformat(hire_date)
@@ -295,11 +339,37 @@ def update_employee(
     if is_active is not None:
         update_data['is_active'] = is_active
     
+    # Track changes for logging
+    changed_fields = list(update_data.keys())
+    
     # Apply updates
     if update_data:
         employee_update = EmployeeUpdate(**update_data)
         employee = crud_employee.update_employee(
             db=db, employee_id=employee.id, employee_update=employee_update
+        )
+    
+    # Update FK fields if provided
+    if department_id is not None:
+        employee.department_id = department_id
+        changed_fields.append('department_id')
+    if position_id is not None:
+        employee.position_id = position_id
+        changed_fields.append('position_id')
+    if department_id is not None or position_id is not None:
+        db.commit(); db.refresh(employee)
+    
+    # Log employee update
+    if changed_fields or photo_front or photo_left or photo_right:
+        log_details = {"changed_fields": changed_fields}
+        if photo_front or photo_left or photo_right:
+            log_details["photos_updated"] = True
+        crud_employee_log.log_employee_action(
+            db=db,
+            employee_id=employee.id,
+            action="updated",
+            actor_id=current_user.id,
+            details=log_details
         )
     
     # Update photos if provided (and recompute embedding)
@@ -365,6 +435,15 @@ def delete_employee(
             status_code=404,
             detail="Employee not found"
         )
+    
+    # Log employee deletion before deleting
+    crud_employee_log.log_employee_action(
+        db=db,
+        employee_id=employee.id,
+        action="deleted",
+        actor_id=current_user.id,
+        details={"employee_id": employee.employee_id, "name": f"{employee.first_name} {employee.last_name}"}
+    )
     
     success = crud_employee.delete_employee(db, employee_id=employee.id)
     if not success:
@@ -611,14 +690,11 @@ def filter_employee_for_role(employee: Employee, current_user: User) -> Employee
     # HSE_EXPERT: mask phone and position only
     if "HSE_EXPERT" in role_names:
         employee.phone = None
-        employee.position = None
         return employee
 
     # IT_ADMIN: mask phone, position, and hide photos
     if "IT_ADMIN" in role_names:
         employee.phone = None
-        employee.position = None
-        # Do not include photos in response
         employee.photos = []
         return employee
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react'
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { api } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -6,11 +6,18 @@ export default function Cameras() {
   const { token, user } = useAuth()
   const [selected, setSelected] = useState(1)
   const [isDetectionMode, setIsDetectionMode] = useState(false)
+  const isDetectionModeRef = useRef(false)
   const [detectionStatus, setDetectionStatus] = useState({})
   const [violations, setViolations] = useState([])
   const [loading, setLoading] = useState(false)
   const intervalRef = useRef(null)
   const [nonce, setNonce] = useState(0)
+  const videoRef = useRef(null)
+  const overlayRef = useRef(null)
+  const detectTimerRef = useRef(null)
+  const processingRef = useRef(false)
+  const latestDetectionsRef = useRef([])
+  const [detectionsTick, setDetectionsTick] = useState(0)
   
   const cameras = useMemo(() => ([
     { id: 1, name: 'Camera-1', desc: 'Demo stream 1 (demo.mp4)' },
@@ -19,7 +26,7 @@ export default function Cameras() {
   ]), [])
 
   const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream?token=${encodeURIComponent(token || '')}`
-  const detectionSrc = `${api.defaults.baseURL}/api/v1/detections/stream/${selected}?token=${encodeURIComponent(token || '')}&v=${nonce}`
+  // detectionSrc removed; detection handled client-side via frame capture
 
   // Fetch violations periodically when detection is active
   useEffect(() => {
@@ -47,15 +54,158 @@ export default function Cameras() {
     }
   }, [isDetectionMode])
 
+  const drawDetections = useCallback(() => {
+    const canvas = overlayRef.current
+    const video = videoRef.current
+    if (!canvas || !video) return
+    const vw = video.videoWidth
+    const vh = video.videoHeight
+    if (!vw || !vh) return
+    const rect = video.getBoundingClientRect()
+    // Set canvas size to rendered size
+    canvas.width = rect.width
+    canvas.height = rect.height
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    const scaleX = rect.width / vw
+    const scaleY = rect.height / vh
+    const detections = latestDetectionsRef.current || []
+    for (const det of detections) {
+      const { box, class_name, confidence, recognized_name } = det || {}
+      if (!box) continue
+      let { x1, y1, x2, y2 } = box
+      // Defensive: ensure numbers
+      if ([x1,y1,x2,y2].some(v => typeof v !== 'number' || isNaN(v))) continue
+      // Clamp
+      x1 = Math.max(0, Math.min(vw, x1)); x2 = Math.max(0, Math.min(vw, x2));
+      y1 = Math.max(0, Math.min(vh, y1)); y2 = Math.max(0, Math.min(vh, y2));
+      const cx1 = x1 * scaleX
+      const cy1 = y1 * scaleY
+      const w = (x2 - x1) * scaleX
+      const h = (y2 - y1) * scaleY
+      if (w <= 2 || h <= 2) continue
+      let color = '#ffffff'
+      const cls = (class_name || '').toLowerCase()
+      if (cls.includes('helmet')) color = '#16a34a'
+      else if (cls.includes('vest')) color = '#eab308'
+      else if (cls.includes('face')) color = '#3b82f6'
+      else if (cls.includes('glove')) color = '#f97316'
+      else if (cls.includes('mask')) color = '#9333ea'
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2
+      ctx.strokeRect(cx1, cy1, w, h)
+      const labelParts = [class_name]
+      if (confidence !== undefined) labelParts.push(`${(confidence * 100).toFixed(1)}%`)
+      if (recognized_name && recognized_name !== 'Unknown') labelParts.push(recognized_name)
+      const label = labelParts.filter(Boolean).join(' ')
+      ctx.font = '12px sans-serif'
+      const metrics = ctx.measureText(label)
+      const textWidth = metrics.width + 8
+      const textHeight = 16
+      const labelY = cy1 - textHeight - 2 < 0 ? cy1 + textHeight : cy1 - 2
+      ctx.fillStyle = color
+      ctx.fillRect(cx1, labelY - textHeight, textWidth, textHeight)
+      ctx.fillStyle = '#000'
+      ctx.fillText(label, cx1 + 4, labelY - 4)
+    }
+  }, [])
+
+  useEffect(() => { drawDetections() }, [detectionsTick, drawDetections])
+
+  // Keep ref in sync to avoid stale closure in interval callbacks
+  useEffect(() => { isDetectionModeRef.current = isDetectionMode }, [isDetectionMode])
+
+  const captureAndDetect = useCallback(async () => {
+    const video = videoRef.current
+    const active = isDetectionModeRef.current
+    if (!active) return
+    if (!video) {
+      return
+    }
+    if (processingRef.current) {
+      // Optional verbose skip log (comment out if too noisy)
+      // console.log('[PPE] Skip frame: previous detection still processing')
+      return
+    }
+    if (video.readyState < 2) {
+      return
+    }
+    processingRef.current = true
+    try {
+      const off = document.createElement('canvas')
+      const vw = video.videoWidth
+      const vh = video.videoHeight
+      if (!vw || !vh) {
+        return
+      }
+      off.width = vw
+      off.height = vh
+      const octx = off.getContext('2d')
+      octx.drawImage(video, 0, 0, vw, vh)
+      const dataUrl = off.toDataURL('image/jpeg', 0.6)
+      const payload = { frame: dataUrl, selected_rules: ['helmet', 'safety-vest', 'face'] }
+      console.log('[PPE] Frame sent')
+      const resp = await api.post('/api/v1/live-camera/detect', payload)
+      if (resp?.data?.detections) {
+        latestDetectionsRef.current = resp.data.detections
+        // Immediate draw for responsiveness
+        drawDetections()
+        // Also bump tick in case layout changed
+        setDetectionsTick(t => t + 1)
+        console.log(`[PPE] Detection result received (n=${resp.data.detections.length})`)
+      } else {
+        // No detections returned
+        latestDetectionsRef.current = []
+        drawDetections()
+        console.log('[PPE] Detection result received (empty)')
+      }
+    } catch (_) {
+      // ignore errors to keep smooth playback
+      console.log('[PPE] Detection error')
+    } finally {
+      processingRef.current = false
+    }
+  }, [drawDetections])
+
+  // Ensure the video element has enough data to extract frames
+  const ensureVideoReady = useCallback(() => {
+    return new Promise((resolve) => {
+      const video = videoRef.current
+      if (!video) {
+        return resolve(false)
+      }
+      // HAVE_CURRENT_DATA = 2, HAVE_ENOUGH_DATA = 4
+      if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+        return resolve(true)
+      }
+      let attempts = 0
+      const maxAttempts = 25 // ~2.5s at 100ms
+      const interval = setInterval(() => {
+        attempts++
+        const vs = video.readyState
+        if (vs >= 2 && video.videoWidth && video.videoHeight) {
+          clearInterval(interval)
+          resolve(true)
+        } else if (attempts >= maxAttempts) {
+          clearInterval(interval)
+          resolve(false)
+        }
+      }, 100)
+    })
+  }, [])
+
   const startDetection = async () => {
     setLoading(true)
     try {
-      const response = await api.post(`/api/v1/detections/run/${selected}`, {})
-      setDetectionStatus(response.data)
+      try { const response = await api.post(`/api/v1/detections/run/${selected}`, {}); setDetectionStatus(response.data || {}) } catch (_) {}
       setIsDetectionMode(true)
       setNonce(Date.now())
-      
-      // Fetch recent violations
+      console.log(`[PPE] Detection started (camera=${selected})`)
+      // Wait until video metadata & data are ready before starting loop
+      await ensureVideoReady()
+  // Defer first capture to next microtask so state commit occurs
+  setTimeout(() => { captureAndDetect() }, 10)
+  detectTimerRef.current = setInterval(() => { captureAndDetect() }, 250)
       await fetchViolations()
     } catch (error) {
       console.error('Failed to start detection:', error)
@@ -69,6 +219,15 @@ export default function Cameras() {
     setIsDetectionMode(false)
     setDetectionStatus({})
     setNonce(Date.now())
+    if (detectTimerRef.current) { clearInterval(detectTimerRef.current); detectTimerRef.current = null }
+    latestDetectionsRef.current = []
+    // Clear overlay
+    const canvas = overlayRef.current
+    if (canvas) {
+      const ctx = canvas.getContext('2d')
+      ctx && ctx.clearRect(0,0,canvas.width,canvas.height)
+    }
+    setDetectionsTick(t => t + 1)
   }
 
   const fetchViolations = async () => {
@@ -129,7 +288,7 @@ export default function Cameras() {
               <button
                 key={cam.id}
                 className={`w-full text-left px-3 py-2 rounded border ${selected === cam.id ? 'bg-primary-50 border-primary-400' : 'bg-white border-neutral-200 hover:bg-neutral-50'}`}
-                onClick={() => { setSelected(cam.id); setNonce(Date.now()) }}
+                onClick={() => { setSelected(cam.id); setNonce(Date.now()); if (isDetectionMode) { stopDetection(); setTimeout(startDetection, 50) } }}
               >
                 <div className="font-medium">{cam.name}</div>
                 <div className="text-xs text-neutral-600">{cam.desc}</div>
@@ -158,44 +317,44 @@ export default function Cameras() {
                 />
                 <span className="ml-2 text-sm">PPE Detection</span>
               </label>
+              {isDetectionMode && (
+                <></>
+              )}
               <span className={`px-2 py-1 rounded text-xs ${isDetectionMode ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
                 {isDetectionMode ? 'Detection ON' : 'Normal Video'}
               </span>
             </div>
           </div>
           
-          <div className="relative">
-            {isDetectionMode ? (
-              <img
-                key={`detection-${selected}-${nonce}`}
-                src={detectionSrc}
-                alt="PPE Detection Stream"
-                style={{ width: '100%', maxHeight: 540, background: '#000' }}
-                className="rounded"
-                onError={(e) => {
-                  console.error('Detection stream failed to load')
-                  e.currentTarget.alt = 'Detection stream failed. Ensure your role has access and the backend model is loaded.'
-                }}
-              />
-            ) : (
-              <video
-                key={`normal-${selected}`}
-                controls
-                style={{ width: '100%', maxHeight: 540, background: '#000' }}
-                className="rounded"
-                preload="metadata"
-              >
-                <source src={normalSrc} type="video/mp4" />
-                Your browser does not support the video tag.
-              </video>
-            )}
+          <div className="relative" style={{ width: '100%', maxHeight: 540 }}>
+            <video
+              key={`video-${selected}`}
+              ref={videoRef}
+              src={normalSrc + '&v=' + nonce}
+              loop
+              autoPlay
+              muted
+              playsInline
+              controls={false}
+              crossOrigin="anonymous"
+              onLoadedMetadata={() => { try { videoRef.current?.play() } catch (_) {} }}
+              onLoadedData={() => { /* video data loaded */ }}
+              onPlay={() => { /* video playing */ }}
+              onEnded={(e) => { try { e.currentTarget.currentTime = 0; e.currentTarget.play() } catch (_) {} }}
+              style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block' }}
+              className="rounded"
+            />
+            <canvas
+              ref={overlayRef}
+              className="absolute inset-0 pointer-events-none"
+              style={{ width: '100%', height: '100%', zIndex: 5 }}
+            />
           </div>
           
           <p className="mt-2 text-xs text-gray-500">
-            {isDetectionMode 
-              ? "PPE Detection active. Green boxes show helmets, yellow show vests, blue show faces. Violations are automatically saved to database."
-              : "If the video doesn't start, ensure: backend is running and videos demo.mp4, demo2.mp4, demo3.mp4 exist under app/static/videos/."
-            }
+            {isDetectionMode
+              ? 'PPE Detection active (async). Green=helmet, Yellow=vest, Blue=face. Latest frame only processed.'
+              : "Looping demo video. Ensure demo files exist under /static/videos (demo.mp4, demo2.mp4, demo3.mp4)."}
           </p>
         </div>
       </div>

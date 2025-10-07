@@ -48,6 +48,7 @@ def create_user(db: Session, user: UserCreate) -> User:
         raise ValueError("Role not found")
     
     hashed_password = get_password_hash(user.password)
+    # Legacy department/position fields removed from User model; ignore if present in schema
     db_user = User(
         email=user.email,
         username=user.username or user.email,
@@ -57,8 +58,6 @@ def create_user(db: Session, user: UserCreate) -> User:
         role_id=user.role_id,
         profile_image=user.profile_image,
         phone=user.phone,
-        department=user.department,
-        position=user.position
     )
     db.add(db_user)
     db.commit()

@@ -12,7 +12,8 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 import uuid
 
 # revision identifiers, used by Alembic.
-revision = "20250922_000001_add_uuid_to_employees"
+# Shortened to fit alembic_version.version_num (VARCHAR(32))
+revision = "20250922_000001"
 down_revision = None
 branch_labels = None
 depends_on = None
