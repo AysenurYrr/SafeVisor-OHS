@@ -14,5 +14,6 @@ venv/
 .env
 isg.db
 pgdata/
+test*.db
 
 # (Commit Alembic versions to VCS)
