@@ -28,6 +28,8 @@ export default function LiveCamera() {
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const detectionIntervalRef = useRef(null)
+  const isDetectionInProgressRef = useRef(false)
+  const shouldContinueDetectionRef = useRef(false)
 
   // Initialize webcam
   useEffect(() => {
@@ -144,9 +146,19 @@ export default function LiveCamera() {
   }
 
   const performDetection = async () => {
+    // Skip if detection is already in progress
+    if (isDetectionInProgressRef.current) {
+      return
+    }
+
     try {
+      isDetectionInProgressRef.current = true
+      
       const frameData = captureFrame()
-      if (!frameData) return
+      if (!frameData) {
+        isDetectionInProgressRef.current = false
+        return
+      }
 
       const response = await api.post('/api/v1/live-camera/detect', {
         frame: frameData,
@@ -173,6 +185,16 @@ export default function LiveCamera() {
       }
     } catch (error) {
       console.error('Error during detection:', error)
+    } finally {
+      isDetectionInProgressRef.current = false
+      
+      // Schedule next detection if still active
+      if (shouldContinueDetectionRef.current) {
+        // Use setTimeout instead of setInterval to avoid queueing
+        detectionIntervalRef.current = setTimeout(() => {
+          performDetection()
+        }, 100) // Small delay to prevent tight loop
+      }
     }
   }
 
@@ -183,18 +205,18 @@ export default function LiveCamera() {
     }
 
     setIsDetecting(true)
+    shouldContinueDetectionRef.current = true
     
-    // Perform detection every 500ms
-    detectionIntervalRef.current = setInterval(() => {
-      performDetection()
-    }, 500)
+    // Start the detection loop (will self-schedule after each completion)
+    performDetection()
   }
 
   const stopDetection = () => {
     setIsDetecting(false)
+    shouldContinueDetectionRef.current = false
     
     if (detectionIntervalRef.current) {
-      clearInterval(detectionIntervalRef.current)
+      clearTimeout(detectionIntervalRef.current)
       detectionIntervalRef.current = null
     }
 
