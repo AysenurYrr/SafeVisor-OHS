@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Date
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -41,7 +42,8 @@ class Employee(Base):
     face_encoding = Column(Text, nullable=True)  # Deprecated: Use face_embedding instead
     
     # Averaged face embedding vector (list[float]) computed from profile photos
-    face_embedding = Column(JSONB, nullable=True)
+    # Use JSON for SQLite compatibility, JSONB for PostgreSQL
+    face_embedding = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     violation_score = Column(Integer, default=0, nullable=False)  # Track violation count/score
     is_active = Column(Boolean, default=True)
     notes = Column(Text, nullable=True)

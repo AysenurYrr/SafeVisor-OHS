@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
@@ -13,7 +14,8 @@ class EmployeeLog(Base):
     action = Column(String(50), nullable=False)  # 'created', 'updated', 'deleted'
     actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
-    details = Column(JSONB, nullable=True)  # Store changed fields or additional info
+    # Use JSON for SQLite compatibility, JSONB for PostgreSQL
+    details = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     
     # Relationships
     employee = relationship("Employee", back_populates="logs", lazy="select")

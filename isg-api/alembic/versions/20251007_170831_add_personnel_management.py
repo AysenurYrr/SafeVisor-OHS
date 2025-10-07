@@ -48,6 +48,7 @@ def upgrade():
     op.create_index(op.f('ix_positions_name'), 'positions', ['name'], unique=False)
 
     # Create employee_logs table
+    # Use JSON for SQLite, JSONB for PostgreSQL
     op.create_table(
         'employee_logs',
         sa.Column('id', sa.Integer(), nullable=False),
@@ -55,7 +56,7 @@ def upgrade():
         sa.Column('action', sa.String(length=50), nullable=False),
         sa.Column('actor_id', sa.Integer(), nullable=True),
         sa.Column('timestamp', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('details', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column('details', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
         sa.ForeignKeyConstraint(['employee_id'], ['employees.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['actor_id'], ['users.id'], ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('id')
