@@ -10,6 +10,8 @@ from app.db.base import Base
 from app.models.user import User
 from app.models.role import Role
 from app.models.employee import Employee
+from app.models.department import Department
+from app.models.position import Position
 from app.core import security
 
 # Test database URL (use SQLite for testing)
@@ -66,15 +68,36 @@ def client():
         db.commit()
         db.refresh(admin_user)
         
-        # Create test employee
+        # Create test department
+        test_department = Department(
+            name="Engineering",
+            description="Engineering Department",
+            is_active=True
+        )
+        db.add(test_department)
+        db.commit()
+        db.refresh(test_department)
+        
+        # Create test position
+        test_position = Position(
+            name="Developer",
+            description="Software Developer",
+            department_id=test_department.id,
+            is_active=True
+        )
+        db.add(test_position)
+        db.commit()
+        db.refresh(test_position)
+        
+        # Create test employee with FK relationships
         test_employee = Employee(
             uuid=str(uuid.uuid4()),
             employee_id="EMP001",
-            first_name="John",
-            last_name="Doe",
-            email="john.doe@example.com",
-            department="Engineering",
-            position="Developer",
+            first_name="Test",
+            last_name="Employee",
+            email="test.employee@example.com",
+            department_id=test_department.id,
+            position_id=test_position.id,
             hire_date="2023-01-01",
             created_by=admin_user.id
         )
@@ -199,8 +222,8 @@ def test_employee_model_uuid_generation():
         first_name="Test",
         last_name="User",
         email="test@example.com",
-        department="Test",
-        position="Tester",
+        department_id=None,  # Can be None
+        position_id=None,    # Can be None
         hire_date="2023-01-01",
         created_by=1
     )
