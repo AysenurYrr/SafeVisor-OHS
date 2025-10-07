@@ -6,7 +6,7 @@ import Button from '../components/Button'
 import Icon from '../components/Icon'
 import EditEmployeeModal from '../components/EditEmployeeModal'
 
-export default function Employees() {
+export default function Employees({ embedded = false }) {
   const [list, setList] = useState([])
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
@@ -194,67 +194,71 @@ export default function Employees() {
   return (
     <div className="space-y-6 animate-fade-in-custom">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-neutral-900 flex items-center gap-3">
-            <Icon name="employees" className="w-8 h-8 text-primary-600" />
-            Employee Management
-          </h1>
-          <p className="text-neutral-600 mt-1">
-            Manage your workforce and track employee information
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="secondary" icon="document" size="sm">
-            Export List
-          </Button>
-          {canManage && (
-            <Button variant="primary" icon="add" onClick={handleAddEmployee}>
-            Add Employee
+      {!embedded && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-neutral-900 flex items-center gap-3">
+              <Icon name="employees" className="w-8 h-8 text-primary-600" />
+              Employee Management
+            </h1>
+            <p className="text-neutral-600 mt-1">
+              Manage your workforce and track employee information
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button variant="secondary" icon="document" size="sm">
+              Export List
             </Button>
-          )}
+            {canManage && (
+              <Button variant="primary" icon="add" onClick={handleAddEmployee}>
+              Add Employee
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="stat-label">Total Employees</p>
-              <p className="stat-value">{list.length}</p>
+      {!embedded && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="stat-card">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="stat-label">Total Employees</p>
+                <p className="stat-value">{list.length}</p>
+              </div>
+              <Icon name="employees" className="w-8 h-8 text-primary-600" />
             </div>
-            <Icon name="employees" className="w-8 h-8 text-primary-600" />
+          </div>
+          <div className="stat-card">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="stat-label">Active Today</p>
+                <p className="stat-value">{Math.floor(list.length * 0.85)}</p>
+              </div>
+              <Icon name="check" className="w-8 h-8 text-success-600" />
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="stat-label">Departments</p>
+                <p className="stat-value">{new Set(list.map(e => e.department)).size}</p>
+              </div>
+              <Icon name="building" className="w-8 h-8 text-warning-600" />
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="stat-label">New This Month</p>
+                <p className="stat-value">12</p>
+              </div>
+              <Icon name="add" className="w-8 h-8 text-neutral-600" />
+            </div>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="stat-label">Active Today</p>
-              <p className="stat-value">{Math.floor(list.length * 0.85)}</p>
-            </div>
-            <Icon name="check" className="w-8 h-8 text-success-600" />
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="stat-label">Departments</p>
-              <p className="stat-value">{new Set(list.map(e => e.department)).size}</p>
-            </div>
-            <Icon name="building" className="w-8 h-8 text-warning-600" />
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="stat-label">New This Month</p>
-              <p className="stat-value">12</p>
-            </div>
-            <Icon name="add" className="w-8 h-8 text-neutral-600" />
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Search and Filters */}
       <div className="card p-6">
@@ -273,6 +277,11 @@ export default function Employees() {
             </div>
           </div>
           <div className="flex gap-2">
+            {embedded && canManage && (
+              <Button variant="primary" icon="add" onClick={handleAddEmployee}>
+                Add Employee
+              </Button>
+            )}
             <Button variant="secondary" size="sm" icon="tag">
               Filter by Department
             </Button>

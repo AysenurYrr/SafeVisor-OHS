@@ -68,8 +68,8 @@ export default function Sidebar({ open }) {
               <NavItem to="/dashboard" icon="dashboard">
                 Dashboard
               </NavItem>
-              <NavItem to="/employees" icon="employees">
-                Employees
+              <NavItem to="/personnel" icon="employees">
+                Personnel Management
               </NavItem>
               <NavItem to="/cameras" icon="cameras">
                 Cameras
@@ -113,13 +113,13 @@ export default function Sidebar({ open }) {
               <Icon name="dashboard" className="w-6 h-6" />
             </NavLink>
             <NavLink
-              to="/employees"
+              to="/personnel"
               className={({ isActive }) => 
                 `flex items-center justify-center p-3 rounded-lg transition-colors ${
                   isActive ? 'bg-primary-50 text-primary-600' : 'text-neutral-600 hover:bg-neutral-100'
                 }`
               }
-              title="Employees"
+              title="Personnel Management"
             >
               <Icon name="employees" className="w-6 h-6" />
             </NavLink>
