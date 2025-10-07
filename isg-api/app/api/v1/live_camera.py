@@ -15,6 +15,7 @@ import numpy as np
 from app.api import deps
 from app.models.user import User
 from app.services.detector_service import detector_service
+from app.services.live_camera_face_recognition import recognize_face_from_frame, is_face_recognition_available
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -50,10 +51,11 @@ def get_available_rules(
 @router.post("/detect")
 async def detect_frame(
     request: Dict[str, Any],
+    db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Dict[str, Any]:
     """
-    Detect PPE in a single frame from the webcam.
+    Detect PPE and recognize faces in a single frame from the webcam.
     
     Request body:
     {
@@ -61,7 +63,7 @@ async def detect_frame(
         "selected_rules": ["helmet", "safety-vest", ...]
     }
     
-    Returns detection results with bounding boxes.
+    Returns detection results with bounding boxes and face recognition.
     """
     try:
         # Extract frame and selected rules from request
@@ -112,9 +114,11 @@ async def detect_frame(
         
         # Format detections for frontend
         results = []
+        face_recognition_enabled = is_face_recognition_available()
+        
         for det in filtered_detections:
             x1, y1, x2, y2 = det["box"]
-            results.append({
+            detection_result = {
                 "class_name": det["cls_name"],
                 "confidence": float(det["conf"]),
                 "box": {
@@ -123,12 +127,37 @@ async def detect_frame(
                     "x2": int(x2),
                     "y2": int(y2)
                 }
-            })
+            }
+            
+            # If this is a face detection, try to recognize it
+            if det["cls_name"].lower() == "face" and face_recognition_enabled:
+                try:
+                    # Crop face from frame
+                    face_crop = frame[y1:y2, x1:x2]
+                    
+                    if face_crop.size > 0:
+                        # Recognize face using ppe_detection_system logic
+                        employee_name, employee_id, score = recognize_face_from_frame(face_crop, db)
+                        
+                        if employee_name:
+                            detection_result["recognized_name"] = employee_name
+                            detection_result["employee_id"] = employee_id
+                            detection_result["recognition_score"] = float(score) if score is not None else None
+                        else:
+                            detection_result["recognized_name"] = "Unknown"
+                            detection_result["employee_id"] = None
+                            detection_result["recognition_score"] = None
+                except Exception as e:
+                    logger.warning(f"Face recognition error: {e}")
+                    detection_result["recognized_name"] = "Unknown"
+            
+            results.append(detection_result)
         
         return {
             "success": True,
             "detections": results,
-            "total_detections": len(results)
+            "total_detections": len(results),
+            "face_recognition_enabled": face_recognition_enabled
         }
         
     except HTTPException:

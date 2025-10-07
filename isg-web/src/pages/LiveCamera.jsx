@@ -5,6 +5,7 @@ import Button from '../components/Button'
 
 // Available PPE detection rules
 const AVAILABLE_RULES = [
+  { id: 'face', label: 'Face Recognition', icon: '👤' },
   { id: 'glasses', label: 'Glasses', icon: '👓' },
   { id: 'face-mask', label: 'Face Mask', icon: '😷' },
   { id: 'ear-muffs', label: 'Ear Muffs', icon: '🎧' },
@@ -114,7 +115,7 @@ export default function LiveCamera() {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     detectionResults.forEach(det => {
-      const { box, class_name, confidence } = det
+      const { box, class_name, confidence, recognized_name, employee_id } = det
       if (!box) return
       const { x1, y1, x2, y2 } = box
       const colors = {
@@ -122,7 +123,8 @@ export default function LiveCamera() {
         'safety-vest': '#eab308',
         'gloves': '#3b82f6',
         'glasses': '#8b5cf6',
-        'face-mask': '#ec4899'
+        'face-mask': '#ec4899',
+        'face': '#10b981'  // Green for face detections
       }
       const color = colors[class_name?.toLowerCase()] || '#f59e0b'
 
@@ -130,7 +132,22 @@ export default function LiveCamera() {
       ctx.lineWidth = 3
       ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
 
-      const label = `${class_name} ${(confidence * 100).toFixed(0)}%`
+      // For face detections, show employee name if recognized
+      let label
+      if (class_name?.toLowerCase() === 'face' && recognized_name) {
+        if (recognized_name !== 'Unknown') {
+          label = `${recognized_name}`
+          // Add employee ID if available
+          if (employee_id) {
+            label = `${recognized_name} (${employee_id})`
+          }
+        } else {
+          label = `Unknown Person`
+        }
+      } else {
+        label = `${class_name} ${(confidence * 100).toFixed(0)}%`
+      }
+      
       ctx.font = 'bold 14px sans-serif'
       const metrics = ctx.measureText(label)
       const textHeight = 18
@@ -404,9 +421,16 @@ export default function LiveCamera() {
                       key={index}
                       className="flex items-center justify-between p-2 bg-neutral-50 rounded"
                     >
-                      <span className="text-sm font-medium text-neutral-900">
-                        {detection.class_name}
-                      </span>
+                      <div className="flex-1">
+                        <span className="text-sm font-medium text-neutral-900">
+                          {detection.class_name}
+                        </span>
+                        {detection.recognized_name && detection.class_name?.toLowerCase() === 'face' && (
+                          <span className="text-xs text-primary-600 ml-2">
+                            ({detection.recognized_name})
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xs text-neutral-600">
                         {(detection.confidence * 100).toFixed(0)}%
                       </span>
