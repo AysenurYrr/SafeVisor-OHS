@@ -15,13 +15,14 @@ import numpy as np
 from app.api import deps
 from app.models.user import User
 from app.services.detector_service import detector_service
-from app.services.live_camera_face_recognition import recognize_face_from_frame, is_face_recognition_available
+from app.services.live_camera_face_recognition import recognize_face_from_frame, is_face_recognition_available, FACE_MATCH_THRESHOLD
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Available PPE detection classes
 AVAILABLE_RULES = [
+    "face",  # ensure face can be selected explicitly
     "glasses",
     "face-mask", 
     "ear-muffs",
@@ -137,23 +138,32 @@ async def detect_frame(
                     
                     if face_crop.size > 0:
                         # Recognize face
-                        employee_name, employee_id, distance, confidence = recognize_face_from_frame(face_crop, db)
+                        employee_name, employee_id, distance, confidence, status = recognize_face_from_frame(face_crop, db)
                         
                         if employee_name:
                             detection_result["recognized_name"] = employee_name
                             detection_result["employee_id"] = employee_id
                             detection_result["recognition_distance"] = float(distance) if distance is not None else None
                             detection_result["recognition_confidence"] = float(confidence) if confidence is not None else None
-                            logger.debug(f"[LiveCamera][Face] {employee_name} (confidence {confidence:.2f})")
+                            detection_result["recognition_status"] = status
+                            detection_result["recognition_threshold"] = FACE_MATCH_THRESHOLD
+                            logger.debug(f"[LiveCamera][Face] MATCH name={employee_name} dist={distance:.3f} thr={FACE_MATCH_THRESHOLD} conf={confidence:.2f}")
                         else:
                             detection_result["recognized_name"] = "Unknown"
                             detection_result["employee_id"] = None
                             detection_result["recognition_distance"] = float(distance) if distance is not None else None
                             detection_result["recognition_confidence"] = 0.0
-                            logger.debug(f"[LiveCamera][Face] Unknown")
+                            detection_result["recognition_status"] = status
+                            detection_result["recognition_threshold"] = FACE_MATCH_THRESHOLD
+                            if distance is None:
+                                logger.debug(f"[LiveCamera][Face] Unknown status={status}")
+                            else:
+                                logger.debug(f"[LiveCamera][Face] Unknown dist={distance:.3f} thr={FACE_MATCH_THRESHOLD} status={status}")
                 except Exception as e:
                     logger.error(f"[LiveCamera] Face recognition error: {e}")
                     detection_result["recognized_name"] = "Unknown"
+                    detection_result["recognition_status"] = "error"
+                    detection_result["recognition_threshold"] = FACE_MATCH_THRESHOLD
             
             results.append(detection_result)
         

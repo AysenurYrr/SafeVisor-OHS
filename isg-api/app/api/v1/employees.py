@@ -13,6 +13,7 @@ from app.schemas.employee import (
 )
 from app.models.employee import Employee, EmployeePhoto
 from app.services.face_embedding_service import generate_employee_embedding
+from app.services.face_embedding_service import facenet_available as embeddings_facenet_available
 
 router = APIRouter()
 
@@ -348,6 +349,50 @@ def get_positions(
     Get all unique positions
     """
     return crud_employee.get_positions(db)
+
+
+@router.get("/embedding-status")
+def get_embedding_status(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.check_admin_role)
+) -> dict:
+    """Return statistics about face embeddings (Admin only)."""
+    total = db.query(Employee).count()
+    with_embedding = db.query(Employee).filter(Employee.face_embedding.isnot(None)).count()
+    without_embedding = total - with_embedding
+    return {
+        "total_employees": total,
+        "with_embedding": with_embedding,
+        "without_embedding": without_embedding,
+        "facenet_available": embeddings_facenet_available(),
+    }
+
+
+@router.post("/{employee_uuid}/regenerate-embedding")
+def regenerate_embedding(
+    employee_uuid: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.check_admin_role)
+) -> dict:
+    """Regenerate embedding for a single employee (Admin only)."""
+    emp = crud_employee.get_employee_by_uuid(db, employee_uuid=employee_uuid)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+    photo_relatives = [emp.photo_front_path, emp.photo_left_path, emp.photo_right_path]
+    photo_fs_paths = []
+    for rel in photo_relatives:
+        if rel and rel.startswith('/static/'):
+            abs_path = os.path.join(static_root, rel[len('/static/'):].lstrip('/'))
+            photo_fs_paths.append(abs_path)
+    embedding = generate_employee_embedding(emp.id, photo_fs_paths)
+    if embedding:
+        emp.face_embedding = embedding
+        db.add(emp)
+        db.commit()
+        db.refresh(emp)
+        return {"employee_uuid": employee_uuid, "regenerated": True, "embedding_length": len(embedding)}
+    return {"employee_uuid": employee_uuid, "regenerated": False, "reason": "no_embedding_generated"}
 
 
 @router.post("/seed")

@@ -24,6 +24,8 @@ export default function LiveCamera() {
   const [cameraError, setCameraError] = useState(null)
   const [detections, setDetections] = useState([])
   const [stats, setStats] = useState({ total: 0, byType: {} })
+  const [debugMode, setDebugMode] = useState(false)
+  const lastSummaryRef = useRef(0)
   
   const videoRef = useRef(null)
   const overlayCanvasRef = useRef(null) // Visible overlay for bounding boxes (does NOT replace video)
@@ -115,7 +117,7 @@ export default function LiveCamera() {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     detectionResults.forEach(det => {
-      const { box, class_name, confidence, recognized_name, employee_id, recognition_confidence } = det
+      const { box, class_name, confidence, recognized_name, employee_id, recognition_confidence, recognition_distance, recognition_status, recognition_threshold } = det
       if (!box) return
       const { x1, y1, x2, y2 } = box
       const colors = {
@@ -136,17 +138,18 @@ export default function LiveCamera() {
       let label
       if (class_name?.toLowerCase() === 'face' && recognized_name) {
         if (recognized_name !== 'Unknown') {
-          label = `${recognized_name}`
-          // Add employee ID if available
-          if (employee_id) {
-            label = `${recognized_name} (${employee_id})`
-          }
-          // Add confidence if available
-          if (recognition_confidence !== undefined && recognition_confidence !== null) {
-            label += ` ${(recognition_confidence * 100).toFixed(0)}%`
-          }
+          const pct = recognition_confidence != null ? (recognition_confidence * 100).toFixed(0) : ''
+          const distFrag = debugMode && recognition_distance != null ? ` d=${recognition_distance.toFixed(3)}` : ''
+          label = `${recognized_name}${employee_id ? ' (' + employee_id + ')' : ''}${pct ? ' ' + pct + '%' : ''}${distFrag}`
         } else {
-          label = `Unknown Person`
+          if (debugMode) {
+            const distFrag = recognition_distance != null ? `d=${recognition_distance?.toFixed(3)}` : ''
+            const thrFrag = recognition_threshold != null ? `thr=${recognition_threshold}` : ''
+            const stFrag = recognition_status ? recognition_status : ''
+            label = `Unknown ${distFrag} ${thrFrag} ${stFrag}`.trim()
+          } else {
+            label = 'Unknown'
+          }
         }
       } else {
         label = `${class_name} ${(confidence * 100).toFixed(0)}%`
@@ -186,16 +189,22 @@ export default function LiveCamera() {
       if (response.data.success && isDetectingRef.current) {
         const detectionResults = response.data.detections || []
         
-        // Log detections with proper formatting
-        detectionResults.forEach(det => {
-          if (det.class_name?.toLowerCase() === 'face') {
-            if (det.recognized_name && det.recognized_name !== 'Unknown') {
-              console.log(`[LiveCamera][Face] ${det.recognized_name} (confidence ${(det.recognition_confidence || 0).toFixed(2)})`)
-            } else {
-              console.log(`[LiveCamera][Face] Unknown`)
+        if (debugMode) {
+          const now = performance.now()
+            if (now - lastSummaryRef.current > 1000) {
+              lastSummaryRef.current = now
+              const faces = detectionResults.filter(d => d.class_name?.toLowerCase() === 'face')
+              if (faces.length) {
+                console.table(faces.map(f => ({
+                  name: f.recognized_name,
+                  status: f.recognition_status,
+                  dist: f.recognition_distance?.toFixed(3),
+                  thr: f.recognition_threshold,
+                  confPct: f.recognition_confidence != null ? Math.round(f.recognition_confidence * 100) : null
+                })))
+              }
             }
-          }
-        })
+        }
         
         setDetections(detectionResults)
         
@@ -353,6 +362,14 @@ export default function LiveCamera() {
                     Stop Detection
                   </Button>
                 )}
+                <Button
+                  onClick={() => setDebugMode(d => !d)}
+                  variant={debugMode ? 'secondary' : 'outline'}
+                  className="flex items-center gap-1 text-xs"
+                  title="Toggle verbose face recognition debug"
+                >
+                  {debugMode ? 'Debug ON' : 'Debug OFF'}
+                </Button>
               </div>
             </div>
           </div>
