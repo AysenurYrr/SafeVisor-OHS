@@ -25,7 +25,8 @@ export default function LiveCamera() {
   const [stats, setStats] = useState({ total: 0, byType: {} })
   
   const videoRef = useRef(null)
-  const canvasRef = useRef(null)
+  const overlayCanvasRef = useRef(null) // Visible overlay for bounding boxes (does NOT replace video)
+  const offscreenCanvasRef = useRef(null) // Offscreen canvas for frame capture only
   const streamRef = useRef(null)
   const detectionIntervalRef = useRef(null)
   const isDetectionInProgressRef = useRef(false)
@@ -77,71 +78,66 @@ export default function LiveCamera() {
     })
   }
 
-  const captureFrame = () => {
-    if (!videoRef.current || !canvasRef.current) return null
-
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    const context = canvas.getContext('2d')
-
-    // Set canvas size to match video
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-
-    // Draw video frame to canvas
-    context.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-    // Convert canvas to base64
-    return canvas.toDataURL('image/jpeg', 0.8)
+  const ensureOffscreenCanvas = () => {
+    if (!offscreenCanvasRef.current) {
+      offscreenCanvasRef.current = document.createElement('canvas')
+    }
+    return offscreenCanvasRef.current
   }
 
-  const drawDetections = (detectionResults) => {
-    if (!canvasRef.current) return
-
-    const canvas = canvasRef.current
-    const context = canvas.getContext('2d')
+  const captureFrame = () => {
     const video = videoRef.current
+    if (!video || video.videoWidth === 0) return null
 
-    // Clear previous drawings
-    context.clearRect(0, 0, canvas.width, canvas.height)
+    const offscreen = ensureOffscreenCanvas()
+    offscreen.width = video.videoWidth
+    offscreen.height = video.videoHeight
+    const ctx = offscreen.getContext('2d')
+    ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height)
+    return offscreen.toDataURL('image/jpeg', 0.7) // Slightly lower quality for speed
+  }
 
-    // Draw video frame
-    if (video) {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+  const drawOverlay = (detectionResults) => {
+    const canvas = overlayCanvasRef.current
+    const video = videoRef.current
+    if (!canvas || !video) return
+    if (video.videoWidth === 0) return
+
+    // Match canvas size to video (only when changed to avoid layout churn)
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
     }
 
-    // Draw bounding boxes
-    detectionResults.forEach(detection => {
-      const { box, class_name, confidence } = detection
-      const { x1, y1, x2, y2 } = box
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      // Choose color based on class
+    detectionResults.forEach(det => {
+      const { box, class_name, confidence } = det
+      if (!box) return
+      const { x1, y1, x2, y2 } = box
       const colors = {
         'helmet': '#22c55e',
         'safety-vest': '#eab308',
         'gloves': '#3b82f6',
         'glasses': '#8b5cf6',
-        'face-mask': '#ec4899',
+        'face-mask': '#ec4899'
       }
-      const color = colors[class_name.toLowerCase()] || '#f59e0b'
+      const color = colors[class_name?.toLowerCase()] || '#f59e0b'
 
-      // Draw bounding box
-      context.strokeStyle = color
-      context.lineWidth = 3
-      context.strokeRect(x1, y1, x2 - x1, y2 - y1)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 3
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
 
-      // Draw label background
-      const label = `${class_name} (${(confidence * 100).toFixed(0)}%)`
-      context.font = 'bold 14px sans-serif'
-      const textMetrics = context.measureText(label)
-      const textHeight = 20
-
-      context.fillStyle = color
-      context.fillRect(x1, y1 - textHeight - 4, textMetrics.width + 10, textHeight + 4)
-
-      // Draw label text
-      context.fillStyle = '#ffffff'
-      context.fillText(label, x1 + 5, y1 - 8)
+      const label = `${class_name} ${(confidence * 100).toFixed(0)}%`
+      ctx.font = 'bold 14px sans-serif'
+      const metrics = ctx.measureText(label)
+      const textHeight = 18
+      ctx.fillStyle = color
+      const rectY = Math.max(0, y1 - textHeight - 6)
+      ctx.fillRect(x1, rectY, metrics.width + 12, textHeight + 6)
+      ctx.fillStyle = '#fff'
+      ctx.fillText(label, x1 + 6, rectY + textHeight - 4)
     })
   }
 
@@ -180,8 +176,8 @@ export default function LiveCamera() {
           byType
         })
 
-        // Draw detections on canvas
-        drawDetections(detectionResults)
+        // Draw detections on overlay (non-blocking video)
+        drawOverlay(detectionResults)
       }
     } catch (error) {
       console.error('Error during detection:', error)
@@ -221,12 +217,9 @@ export default function LiveCamera() {
     }
 
     // Clear canvas
-    if (canvasRef.current) {
-      const context = canvasRef.current.getContext('2d')
-      context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-      if (videoRef.current) {
-        context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height)
-      }
+    if (overlayCanvasRef.current) {
+      const ctx = overlayCanvasRef.current.getContext('2d')
+      ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height)
     }
 
     setDetections([])
@@ -285,13 +278,13 @@ export default function LiveCamera() {
                     autoPlay
                     playsInline
                     muted
-                    className="w-full h-auto"
-                    style={{ display: isDetecting ? 'none' : 'block' }}
+                    className="w-full h-auto block"
                   />
+                  {/* Overlay canvas: same intrinsic size as video, scaled by CSS */}
                   <canvas
-                    ref={canvasRef}
-                    className="w-full h-auto"
-                    style={{ display: isDetecting ? 'block' : 'none' }}
+                    ref={overlayCanvasRef}
+                    className="absolute inset-0 w-full h-full"
+                    style={{ pointerEvents: 'none' }}
                   />
                 </div>
               )}
