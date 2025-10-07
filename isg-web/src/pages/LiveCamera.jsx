@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import api from '../services/api'
+import { api } from '../services/api'
 import Icon from '../components/Icon'
 import Button from '../components/Button'
 
