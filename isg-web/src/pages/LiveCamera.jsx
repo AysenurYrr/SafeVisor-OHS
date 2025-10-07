@@ -115,7 +115,7 @@ export default function LiveCamera() {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     detectionResults.forEach(det => {
-      const { box, class_name, confidence, recognized_name, employee_id } = det
+      const { box, class_name, confidence, recognized_name, employee_id, recognition_confidence } = det
       if (!box) return
       const { x1, y1, x2, y2 } = box
       const colors = {
@@ -140,6 +140,10 @@ export default function LiveCamera() {
           // Add employee ID if available
           if (employee_id) {
             label = `${recognized_name} (${employee_id})`
+          }
+          // Add confidence if available
+          if (recognition_confidence !== undefined && recognition_confidence !== null) {
+            label += ` ${(recognition_confidence * 100).toFixed(0)}%`
           }
         } else {
           label = `Unknown Person`
@@ -181,6 +185,18 @@ export default function LiveCamera() {
 
       if (response.data.success && isDetectingRef.current) {
         const detectionResults = response.data.detections || []
+        
+        // Log detections with proper formatting
+        detectionResults.forEach(det => {
+          if (det.class_name?.toLowerCase() === 'face') {
+            if (det.recognized_name && det.recognized_name !== 'Unknown') {
+              console.log(`[LiveCamera][Face] ${det.recognized_name} (confidence ${(det.recognition_confidence || 0).toFixed(2)})`)
+            } else {
+              console.log(`[LiveCamera][Face] Unknown`)
+            }
+          }
+        })
+        
         setDetections(detectionResults)
         
         // Update statistics
@@ -198,9 +214,11 @@ export default function LiveCamera() {
         if (isDetectingRef.current) {
           drawOverlay(detectionResults)
         }
+      } else if (!response.data.success) {
+        console.error('[LiveCamera][Error] Invalid response:', response.data)
       }
     } catch (error) {
-      console.error('Error during detection:', error)
+      console.error('[LiveCamera][Error] Detection failed:', error)
     } finally {
       isDetectionInProgressRef.current = false
       
@@ -229,6 +247,7 @@ export default function LiveCamera() {
   }
 
   const stopDetection = () => {
+    console.log('[LiveCamera] Stopping detection...')
     setIsDetecting(false)
     isDetectingRef.current = false
     shouldContinueDetectionRef.current = false
@@ -246,6 +265,7 @@ export default function LiveCamera() {
 
     setDetections([])
     setStats({ total: 0, byType: {} })
+    console.log('[LiveCamera] Detection stopped, overlays cleared')
   }
 
   return (

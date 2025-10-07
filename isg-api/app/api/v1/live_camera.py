@@ -136,19 +136,23 @@ async def detect_frame(
                     face_crop = frame[y1:y2, x1:x2]
                     
                     if face_crop.size > 0:
-                        # Recognize face using ppe_detection_system logic
-                        employee_name, employee_id, score = recognize_face_from_frame(face_crop, db)
+                        # Recognize face
+                        employee_name, employee_id, distance, confidence = recognize_face_from_frame(face_crop, db)
                         
                         if employee_name:
                             detection_result["recognized_name"] = employee_name
                             detection_result["employee_id"] = employee_id
-                            detection_result["recognition_score"] = float(score) if score is not None else None
+                            detection_result["recognition_distance"] = float(distance) if distance is not None else None
+                            detection_result["recognition_confidence"] = float(confidence) if confidence is not None else None
+                            logger.debug(f"[LiveCamera][Face] {employee_name} (confidence {confidence:.2f})")
                         else:
                             detection_result["recognized_name"] = "Unknown"
                             detection_result["employee_id"] = None
-                            detection_result["recognition_score"] = None
+                            detection_result["recognition_distance"] = float(distance) if distance is not None else None
+                            detection_result["recognition_confidence"] = 0.0
+                            logger.debug(f"[LiveCamera][Face] Unknown")
                 except Exception as e:
-                    logger.warning(f"Face recognition error: {e}")
+                    logger.error(f"[LiveCamera] Face recognition error: {e}")
                     detection_result["recognized_name"] = "Unknown"
             
             results.append(detection_result)
