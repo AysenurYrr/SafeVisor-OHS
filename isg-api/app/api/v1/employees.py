@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, BackgroundTasks
 import os
 from sqlalchemy.orm import Session
 from app.api import deps
@@ -75,6 +75,7 @@ def create_employee(
     *,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.check_admin_role),  # Only Admin can create
+    background_tasks: BackgroundTasks,
     first_name: str = Form(...),
     last_name: str = Form(...),
     email: str = Form(...),
@@ -148,24 +149,48 @@ def create_employee(
     # Refresh to get updated photo paths
     db.refresh(employee)
 
-    # Attempt face embedding generation (best-effort)
-    try:
-        static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
-        photo_relatives = [employee.photo_front_path, employee.photo_left_path, employee.photo_right_path]
-        photo_fs_paths = []
-        for rel in photo_relatives:
-            if rel and rel.startswith('/static/'):
-                abs_path = os.path.join(static_root, rel[len('/static/'):].lstrip('/'))
-                photo_fs_paths.append(abs_path)
-        embedding = generate_employee_embedding(employee.id, photo_fs_paths)
-        if embedding:
-            employee.face_embedding = embedding
-            db.add(employee)
-            db.commit()
-            db.refresh(employee)
-    except Exception as e:  # pragma: no cover
-        import logging
-        logging.getLogger("app.employees.create").warning("Failed to generate face embedding for employee_id=%s: %s", employee.id, e)
+    # Queue background embedding generation (non-blocking)
+    def _bg_embed(emp_id: int):  # pragma: no cover (background task side-effects)
+        import logging, traceback
+        logger = logging.getLogger("app.employees.embedding")
+        try:
+            local_db = deps.SessionLocal()
+            emp = local_db.query(Employee).filter(Employee.id == emp_id).first()
+            if not emp:
+                return
+            photos = [emp.photo_front_path, emp.photo_left_path, emp.photo_right_path]
+            if not all(photos):
+                logger.warning(f"[Embedding] Skipping employee_id={emp_id} missing required photos")
+                return
+            static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+            fs_paths = []
+            for rel in photos:
+                if rel and rel.startswith('/static/'):
+                    abs_path = os.path.join(static_root, rel[len('/static/'):].lstrip('/'))
+                    if os.path.exists(abs_path):
+                        fs_paths.append(abs_path)
+                    else:
+                        logger.warning(f"[Embedding] Photo path missing on disk: {abs_path}")
+            if len(fs_paths) < 2:  # require at least 2 for average robustness
+                logger.warning(f"[Embedding] Not enough valid photos for employee_id={emp_id} (have {len(fs_paths)})")
+                return
+            embedding = generate_employee_embedding(emp.id, fs_paths)
+            if embedding:
+                emp.face_embedding = embedding
+                local_db.add(emp)
+                local_db.commit()
+                logger.info(f"[Embedding] Generated successfully for Employee {emp.employee_id}")
+            else:
+                logger.warning(f"[Embedding] Failed to generate embedding for Employee {emp.employee_id}")
+        except Exception as exc:
+            logger.error(f"[Embedding] Exception generating embedding emp_id={emp_id}: {exc}\n{traceback.format_exc()}")
+        finally:
+            try:
+                local_db.close()
+            except Exception:
+                pass
+
+    background_tasks.add_task(_bg_embed, employee.id)
 
     return filter_employee_for_role(employee, current_user)
 
@@ -195,6 +220,7 @@ def update_employee(
     db: Session = Depends(deps.get_db),
     employee_uuid: str,
     current_user: User = Depends(deps.check_admin_role),  # Only Admin can update
+    background_tasks: BackgroundTasks,
     first_name: Optional[str] = Form(None),
     last_name: Optional[str] = Form(None),
     email: Optional[str] = Form(None),
@@ -280,24 +306,45 @@ def update_employee(
     if photo_front or photo_left or photo_right:
         update_employee_photos(db, employee, photo_front, photo_left, photo_right)
         db.refresh(employee)
-        # Recompute embedding
-        try:
-            static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
-            photo_relatives = [employee.photo_front_path, employee.photo_left_path, employee.photo_right_path]
-            photo_fs_paths = []
-            for rel in photo_relatives:
-                if rel and rel.startswith('/static/'):
-                    abs_path = os.path.join(static_root, rel[len('/static/'):].lstrip('/'))
-                    photo_fs_paths.append(abs_path)
-            embedding = generate_employee_embedding(employee.id, photo_fs_paths)
-            if embedding:
-                employee.face_embedding = embedding
-                db.add(employee)
-                db.commit()
-                db.refresh(employee)
-        except Exception as e:  # pragma: no cover
-            import logging
-            logging.getLogger("app.employees.update").warning("Failed to regenerate face embedding for employee_id=%s: %s", employee.id, e)
+        # Background regeneration to avoid blocking update latency
+        def _bg_regen(emp_id: int):  # pragma: no cover
+            import logging, traceback
+            logger = logging.getLogger("app.employees.embedding")
+            try:
+                local_db = deps.SessionLocal()
+                emp = local_db.query(Employee).filter(Employee.id == emp_id).first()
+                if not emp:
+                    return
+                photos = [emp.photo_front_path, emp.photo_left_path, emp.photo_right_path]
+                if not all(photos):
+                    logger.warning(f"[Embedding] Skip regen (missing photos) employee_id={emp_id}")
+                    return
+                static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+                fs_paths = []
+                for rel in photos:
+                    if rel and rel.startswith('/static/'):
+                        abs_path = os.path.join(static_root, rel[len('/static/'):].lstrip('/'))
+                        if os.path.exists(abs_path):
+                            fs_paths.append(abs_path)
+                if not fs_paths:
+                    logger.warning(f"[Embedding] No valid photo files for regen emp_id={emp_id}")
+                    return
+                embedding = generate_employee_embedding(emp.id, fs_paths)
+                if embedding:
+                    emp.face_embedding = embedding
+                    local_db.add(emp)
+                    local_db.commit()
+                    logger.info(f"[Embedding] Regenerated successfully for Employee {emp.employee_id}")
+                else:
+                    logger.warning(f"[Embedding] Regenerate failed for Employee {emp.employee_id}")
+            except Exception as exc:
+                logger.error(f"[Embedding] Exception in regen emp_id={emp_id}: {exc}\n{traceback.format_exc()}")
+            finally:
+                try:
+                    local_db.close()
+                except Exception:
+                    pass
+        background_tasks.add_task(_bg_regen, employee.id)
     
     return filter_employee_for_role(employee, current_user)
 
@@ -385,13 +432,20 @@ def regenerate_embedding(
         if rel and rel.startswith('/static/'):
             abs_path = os.path.join(static_root, rel[len('/static/'):].lstrip('/'))
             photo_fs_paths.append(abs_path)
+    import logging
+    logger = logging.getLogger("app.employees.embedding")
+    if len(photo_fs_paths) < 2:
+        logger.warning(f"[Embedding] Regenerate aborted (need >=2 photos) employee={emp.employee_id}")
+        return {"employee_uuid": employee_uuid, "regenerated": False, "reason": "insufficient_photos"}
     embedding = generate_employee_embedding(emp.id, photo_fs_paths)
     if embedding:
         emp.face_embedding = embedding
         db.add(emp)
         db.commit()
         db.refresh(emp)
+        logger.info(f"[Embedding] Generated successfully for Employee {emp.employee_id}")
         return {"employee_uuid": employee_uuid, "regenerated": True, "embedding_length": len(embedding)}
+    logger.warning(f"[Embedding] Failed to generate embedding for Employee {emp.employee_id}")
     return {"employee_uuid": employee_uuid, "regenerated": False, "reason": "no_embedding_generated"}
 
 
