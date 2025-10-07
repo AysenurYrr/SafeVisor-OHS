@@ -2,6 +2,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from app.models.employee import Employee
+from app.models.department import Department
+from app.models.position import Position
 from app.schemas.employee import EmployeeCreate, EmployeeUpdate
 import uuid as uuid_lib
 
@@ -51,10 +53,12 @@ def get_employees(
     query = db.query(Employee)
     
     if department:
-        query = query.filter(Employee.department.ilike(f"%{department}%"))
-    
+        query = query.join(Department, Department.id == Employee.department_id, isouter=True)
+        query = query.filter(Department.name.ilike(f"%{department}%"))
     if position:
-        query = query.filter(Employee.position.ilike(f"%{position}%"))
+        if 'Department' not in str(query):  # ensure join only once if not already
+            query = query.join(Position, Position.id == Employee.position_id, isouter=True)
+        query = query.filter(Position.name.ilike(f"%{position}%"))
     
     if is_active is not None:
         query = query.filter(Employee.is_active == is_active)
@@ -82,10 +86,12 @@ def count_employees(
     query = db.query(Employee)
     
     if department:
-        query = query.filter(Employee.department.ilike(f"%{department}%"))
-    
+        query = query.join(Department, Department.id == Employee.department_id, isouter=True)
+        query = query.filter(Department.name.ilike(f"%{department}%"))
     if position:
-        query = query.filter(Employee.position.ilike(f"%{position}%"))
+        if 'Department' not in str(query):
+            query = query.join(Position, Position.id == Employee.position_id, isouter=True)
+        query = query.filter(Position.name.ilike(f"%{position}%"))
     
     if is_active is not None:
         query = query.filter(Employee.is_active == is_active)
@@ -110,8 +116,8 @@ def create_employee(db: Session, employee: EmployeeCreate, created_by: int) -> E
         last_name=employee.last_name,
         email=employee.email,
         phone=employee.phone,
-        department=employee.department,
-        position=employee.position,
+    department_id=employee.department_id,
+    position_id=employee.position_id,
         hire_date=employee.hire_date,
         birth_date=employee.birth_date,
         emergency_contact=employee.emergency_contact,
@@ -174,11 +180,11 @@ def delete_employee(db: Session, employee_id: int) -> bool:
 
 def get_departments(db: Session) -> list[str]:
     """Get all unique departments"""
-    result = db.query(Employee.department).distinct().all()
+    result = db.query(Department.name).distinct().all()
     return [dept[0] for dept in result if dept[0]]
 
 
 def get_positions(db: Session) -> list[str]:
     """Get all unique positions"""
-    result = db.query(Employee.position).distinct().all()
+    result = db.query(Position.name).distinct().all()
     return [pos[0] for pos in result if pos[0]]

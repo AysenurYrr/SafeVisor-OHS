@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { EmployeesAPI } from '../services/api'
+import { EmployeesAPI, DepartmentsAPI, PositionsAPI } from '../services/api'
 import Table, { StatusBadge } from '../components/Table'
 import { SkeletonTable } from '../components/Loading'
 import Button from '../components/Button'
@@ -19,13 +19,15 @@ export default function Employees({ embedded = false }) {
     last_name: '', 
     email: '', 
     phone: '', 
-    department: '', 
-    position: '', 
+    department_id: '', 
+    position_id: '', 
     hire_date: '', 
     emergency_contact: '',
     emergency_phone: '', 
     notes: '' 
   })
+  const [departments, setDepartments] = useState([])
+  const [positions, setPositions] = useState([])
   const [files, setFiles] = useState([null, null, null])
   const [filePreviews, setFilePreviews] = useState([null, null, null])
 
@@ -48,6 +50,17 @@ export default function Employees({ embedded = false }) {
         // Backend returns { employees, total, page, per_page }
         const employees = Array.isArray(resp?.employees) ? resp.employees : Array.isArray(resp) ? resp : []
         setList(employees)
+        // Preload departments & positions for selects
+        try {
+          const [deptResp, posResp] = await Promise.all([
+            DepartmentsAPI.list(),
+            PositionsAPI.list()
+          ])
+          setDepartments(deptResp || [])
+          setPositions(posResp || [])
+        } catch (e2) {
+          console.warn('Failed to preload departments/positions', e2)
+        }
       } catch (e) {
         console.error('Failed to load employees', e)
         setError('Failed to load employees. Please try again.')
@@ -60,8 +73,8 @@ export default function Employees({ embedded = false }) {
   const filtered = useMemo(() => list.filter((e) => {
     const fullName = `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim()
     const email = e.email ?? ''
-    const department = e.department ?? ''
-    const position = e.position ?? ''
+  const department = e.department_name ?? ''
+  const position = e.position_name ?? ''
     const searchTerm = q.toLowerCase()
     
     return fullName.toLowerCase().includes(searchTerm) || 
@@ -77,7 +90,20 @@ export default function Employees({ embedded = false }) {
   }
 
   const handleUpdateEmployee = (updated) => {
-    setList(list.map(emp => emp.id === updated.id ? updated : emp))
+    // Merge with derived presentation fields to avoid full refetch
+    setList(prev => prev.map(emp => {
+      if (emp.id !== updated.id) return emp
+      const deptName = updated.department_name || departments.find(d => d.id === updated.department_id)?.name || ''
+      const posName = updated.position_name || positions.find(p => p.id === updated.position_id)?.name || ''
+      return {
+        ...emp,
+        ...updated,
+        department_name: deptName,
+        position_name: posName,
+        status: updated.status || (updated.is_active ? 'active' : 'inactive'),
+        last_activity: updated.last_activity || (updated.updated_at ? updated.updated_at : 'Just now')
+      }
+    }))
   }
 
   const handleDeleteEmployee = async (employee) => {
@@ -133,21 +159,21 @@ export default function Employees({ embedded = false }) {
     },
     { 
       header: 'Department', 
-      accessor: 'department',
+      accessor: 'department_name',
       icon: 'building',
       cell: (row) => (
         <div className="flex items-center gap-2">
           <Icon name="building" className="w-4 h-4 text-neutral-400" />
-          <span>{row.department || 'Unassigned'}</span>
+          <span>{row.department_name || 'Unassigned'}</span>
         </div>
       )
     },
     { 
       header: 'Position', 
-      accessor: 'position',
+      accessor: 'position_name',
       icon: 'tag',
       cell: (row) => (
-        <span className="badge-primary">{row.position || 'No position'}</span>
+        <span className="badge-primary">{row.position_name || 'No position'}</span>
       )
     },
     {
@@ -243,7 +269,7 @@ export default function Employees({ embedded = false }) {
             <div className="flex items-center justify-between">
               <div>
                 <p className="stat-label">Departments</p>
-                <p className="stat-value">{new Set(list.map(e => e.department)).size}</p>
+                <p className="stat-value">{new Set(list.map(e => e.department_name)).size}</p>
               </div>
               <Icon name="building" className="w-8 h-8 text-warning-600" />
             </div>
@@ -349,8 +375,23 @@ export default function Employees({ embedded = false }) {
                 <input className="input" placeholder="Last Name *" value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
                 <input className="input" placeholder="Email *" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
                 <input className="input" placeholder="Phone" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-                <input className="input" placeholder="Department *" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} />
-                <input className="input" placeholder="Position *" value={form.position} onChange={e => setForm({ ...form, position: e.target.value })} />
+                <select className="input" value={form.department_id} onChange={e => {
+                  const deptId = e.target.value
+                  setForm({ ...form, department_id: deptId, position_id: '' })
+                }}>
+                  <option value="">Unassigned Department</option>
+                  {departments.filter(d => d.is_active !== false).map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+                <select className="input" value={form.position_id} onChange={e => setForm({ ...form, position_id: e.target.value })} disabled={!form.department_id}>
+                  <option value="">{form.department_id ? 'Unassigned Position' : 'Select Department First'}</option>
+                  {positions
+                    .filter(p => p.is_active !== false && (!form.department_id || p.department_id === Number(form.department_id)))
+                    .map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
                 <input className="input" type="date" placeholder="Hire Date *" value={form.hire_date} onChange={e => setForm({ ...form, hire_date: e.target.value })} />
                 <input className="input" placeholder="Emergency Contact Name" value={form.emergency_contact} onChange={e => setForm({ ...form, emergency_contact: e.target.value })} />
                 <input className="input" placeholder="Emergency Phone" value={form.emergency_phone} onChange={e => setForm({ ...form, emergency_phone: e.target.value })} />
@@ -433,7 +474,7 @@ export default function Employees({ embedded = false }) {
               <Button variant="primary" onClick={async () => {
                 try {
                   // Validate required fields
-                  if (!form.first_name || !form.last_name || !form.email || !form.department || !form.position) {
+                  if (!form.first_name || !form.last_name || !form.email || !form.department_id || !form.position_id) {
                     alert('Please fill in all required fields (marked with *)')
                     return
                   }
@@ -449,8 +490,8 @@ export default function Employees({ embedded = false }) {
                   data.append('last_name', form.last_name)
                   data.append('email', form.email)
                   if (form.phone) data.append('phone', form.phone)
-                  if (form.department) data.append('department', form.department)
-                  if (form.position) data.append('position', form.position)
+                  if (form.department_id) data.append('department_id', form.department_id)
+                  if (form.position_id) data.append('position_id', form.position_id)
                   if (form.hire_date) data.append('hire_date', form.hire_date)
                   if (form.emergency_phone) data.append('emergency_phone', form.emergency_phone)
                   if (form.emergency_contact) data.append('emergency_contact', form.emergency_contact)
@@ -470,8 +511,8 @@ export default function Employees({ embedded = false }) {
                     last_name: '', 
                     email: '', 
                     phone: '', 
-                    department: '', 
-                    position: '', 
+                    department_id: '', 
+                    position_id: '', 
                     hire_date: '', 
                     emergency_phone: '',
                     emergency_contact: '', 

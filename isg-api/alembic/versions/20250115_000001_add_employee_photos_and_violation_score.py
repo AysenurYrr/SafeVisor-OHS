@@ -2,7 +2,7 @@
 Add photo paths and violation_score to employees table
 
 Revision ID: 20250115_000001
-Revises: 20250922_000001_add_uuid_to_employees
+Revises: 20250922_000001
 Create Date: 2025-01-15 00:00:01.000000
 """
 
@@ -10,8 +10,9 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = "20250115_000001_add_employee_photos_and_violation_score"
-down_revision = "20250922_000001_add_uuid_to_employees"
+# Shortened revision & updated down_revision to shortened prior id.
+revision = "20250115_000001"
+down_revision = "20250922_000001"
 branch_labels = None
 depends_on = None
 

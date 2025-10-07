@@ -9,7 +9,7 @@ import DashboardLayout from './layouts/DashboardLayout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
-import PersonnelManagement from './pages/PersonnelManagement'
+import EmployeeManagement from './pages/PersonnelManagement'
 import Cameras from './pages/Cameras'
 import FactoryAreas from './pages/FactoryAreas'
 import Violations from './pages/Events/Violations'
@@ -30,7 +30,7 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/employees" element={<Employees />} />
-            <Route path="/personnel" element={<PersonnelManagement />} />
+            <Route path="/employee-management" element={<EmployeeManagement />} />
             <Route path="/cameras" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><Cameras /></PrivateRoute>} />
             <Route path="/factory-areas" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><FactoryAreas /></PrivateRoute>} />
             <Route path="/live-camera" element={<LiveCamera />} />

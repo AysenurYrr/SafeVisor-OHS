@@ -3,14 +3,16 @@ import Icon from '../components/Icon'
 import Employees from './Employees'
 import Departments from './Departments'
 import Positions from './Positions'
+import EmployeeLogs from './EmployeeLogs'
 
-export default function PersonnelManagement() {
+export default function EmployeeManagement() {
   const [activeTab, setActiveTab] = useState('employees')
 
   const tabs = [
     { id: 'employees', label: 'Employees', icon: 'employees' },
     { id: 'departments', label: 'Departments', icon: 'building' },
-    { id: 'positions', label: 'Positions', icon: 'tag' }
+    { id: 'positions', label: 'Positions', icon: 'tag' },
+    { id: 'logs', label: 'Logs', icon: 'document' }
   ]
 
   return (
@@ -20,7 +22,7 @@ export default function PersonnelManagement() {
         <div>
           <h1 className="text-3xl font-bold text-neutral-900 flex items-center gap-3">
             <Icon name="employees" className="w-8 h-8 text-primary-600" />
-            Personnel Management
+            Employee Management
           </h1>
           <p className="text-neutral-600 mt-1">
             Manage employees, departments, and positions
@@ -54,6 +56,7 @@ export default function PersonnelManagement() {
           {activeTab === 'employees' && <Employees embedded />}
           {activeTab === 'departments' && <Departments />}
           {activeTab === 'positions' && <Positions />}
+          {activeTab === 'logs' && <EmployeeLogs />}
         </div>
       </div>
     </div>

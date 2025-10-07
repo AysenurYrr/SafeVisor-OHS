@@ -19,10 +19,6 @@ class Employee(Base):
     email = Column(String(255), unique=True, index=True, nullable=True)
     phone = Column(String(20), nullable=True)
     
-    # Legacy string fields - kept for backward compatibility during migration
-    department = Column(String(100), nullable=True)
-    position = Column(String(100), nullable=True)
-    
     # New FK relationships to departments and positions tables
     department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
     position_id = Column(Integer, ForeignKey("positions.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -38,8 +34,9 @@ class Employee(Base):
     photo_right_path = Column(String(500), nullable=True)
     
     # Deprecated fields - will be removed in future migration
-    photo_url = Column(String(500), nullable=True)  # Deprecated: Use photo_front_path, photo_left_path, photo_right_path
-    face_encoding = Column(Text, nullable=True)  # Deprecated: Use face_embedding instead
+    # Deprecated legacy columns removed by migration; placeholders kept commented for reference
+    # photo_url = Column(String(500), nullable=True)
+    # face_encoding = Column(Text, nullable=True)
     
     # Averaged face embedding vector (list[float]) computed from profile photos
     # Use JSON for SQLite compatibility, JSONB for PostgreSQL

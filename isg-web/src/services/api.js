@@ -246,6 +246,17 @@ export const PositionsAPI = {
   }
 }
 
+// Employee Logs API
+export const EmployeeLogsAPI = {
+  async list(skip = 0, limit = 100, employee_id = null, action = null) {
+    let url = `/api/v1/employee-logs/?skip=${skip}&limit=${limit}`
+    if (employee_id) url += `&employee_id=${employee_id}`
+    if (action) url += `&action=${encodeURIComponent(action)}`
+    const response = await api.get(url)
+    return response.data
+  }
+}
+
 // Cameras API
 export const CamerasAPI = {
   async list(skip = 0, limit = 100) {

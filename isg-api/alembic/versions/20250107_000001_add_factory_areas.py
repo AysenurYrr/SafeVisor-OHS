@@ -2,7 +2,7 @@
 Add factory_areas table with cameras and safety rules associations
 
 Revision ID: 20250107_000001
-Revises: 20250115_000001_add_employee_photos_and_violation_score
+Revises: 20250115_000001
 Create Date: 2025-01-07 00:00:01.000000
 """
 
@@ -11,8 +11,9 @@ import sqlalchemy as sa
 from sqlalchemy.sql import func
 
 # revision identifiers, used by Alembic.
-revision = "20250107_000001_add_factory_areas"
-down_revision = "20250115_000001_add_employee_photos_and_violation_score"
+# Shortened revision & updated down_revision to shortened prior id.
+revision = "20250107_000001"
+down_revision = "20250115_000001"
 branch_labels = None
 depends_on = None
 
