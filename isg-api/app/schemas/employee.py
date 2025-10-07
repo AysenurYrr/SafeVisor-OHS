@@ -23,6 +23,8 @@ class EmployeeBase(BaseModel):
     violation_score: int = 0
     is_active: bool = True
     notes: Optional[str] = None
+    # Stored averaged face embedding (list of floats) if generated
+    face_embedding: Optional[list[float]] = None
 
 
 class EmployeeCreate(EmployeeBase):
@@ -61,6 +63,7 @@ class EmployeeInDB(EmployeeBase):
     id: int
     uuid: Union[str, uuid_lib.UUID]
     face_encoding: Optional[str] = None
+    face_embedding: Optional[list[float]] = None
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -78,6 +81,7 @@ class EmployeeResponse(EmployeeBase):
     # Computed/presentation fields
     status: Optional[str] = None
     last_activity: Optional[str] = None
+    face_embedding: Optional[list[float]] = None
 
     class Config:
         from_attributes = True

@@ -74,6 +74,9 @@ export default function Sidebar({ open }) {
               <NavItem to="/cameras" icon="cameras">
                 Cameras
               </NavItem>
+              <NavItem to="/live-camera" icon="cameras">
+                Live Camera
+              </NavItem>
               <NavItem to="/factory-areas" icon="building">
                 Factory Areas
               </NavItem>

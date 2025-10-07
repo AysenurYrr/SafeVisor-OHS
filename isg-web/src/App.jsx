@@ -14,6 +14,7 @@ import FactoryAreas from './pages/FactoryAreas'
 import Violations from './pages/Events/Violations'
 import Pose from './pages/Events/Pose'
 import Users from './pages/Admin/Users'
+import LiveCamera from './pages/LiveCamera'
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/employees" element={<Employees />} />
             <Route path="/cameras" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><Cameras /></PrivateRoute>} />
             <Route path="/factory-areas" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><FactoryAreas /></PrivateRoute>} />
+            <Route path="/live-camera" element={<LiveCamera />} />
             <Route path="/events/violations" element={<Violations />} />
             <Route path="/events/pose" element={<Pose />} />
             <Route path="/admin/users" element={<PrivateRoute allowedRoles={["Admin (IT)"]}><Users /></PrivateRoute>} />

@@ -1,7 +1,7 @@
 """rename face_embeddings to face_embedding (or create)
 
 Revision ID: 20251007_121500
-Revises: 20251007_120000_add_face_embedding_column
+Revises: 20251007_120000
 Create Date: 2025-10-07 12:15:00
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 revision = '20251007_121500'
-down_revision = '20251007_120000_add_face_embedding_column'
+down_revision = '20251007_120000'
 branch_labels = None
 depends_on = None
 

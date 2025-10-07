@@ -39,9 +39,11 @@ Pillow==10.1.0
 
 # AI/ML Dependencies for PPE Detection
 numpy==1.26.4
-torch>=2.0.0
+torch==2.2.2
+torchvision==0.17.2
 ultralytics>=8.0.0
 opencv-python==4.8.1.78
+facenet-pytorch==2.5.3
 
 # Build tooling (temporary workaround for pkg_resources deprecation warnings)
 setuptools<81
