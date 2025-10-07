@@ -31,6 +31,7 @@ export default function LiveCamera() {
   const detectionIntervalRef = useRef(null)
   const isDetectionInProgressRef = useRef(false)
   const shouldContinueDetectionRef = useRef(false)
+  const isDetectingRef = useRef(false)
 
   // Initialize webcam
   useEffect(() => {
@@ -161,7 +162,7 @@ export default function LiveCamera() {
         selected_rules: selectedRules
       })
 
-      if (response.data.success) {
+      if (response.data.success && isDetectingRef.current) {
         const detectionResults = response.data.detections || []
         setDetections(detectionResults)
         
@@ -176,8 +177,10 @@ export default function LiveCamera() {
           byType
         })
 
-        // Draw detections on overlay (non-blocking video)
-        drawOverlay(detectionResults)
+        // Draw detections on overlay (non-blocking video) only if still detecting
+        if (isDetectingRef.current) {
+          drawOverlay(detectionResults)
+        }
       }
     } catch (error) {
       console.error('Error during detection:', error)
@@ -201,6 +204,7 @@ export default function LiveCamera() {
     }
 
     setIsDetecting(true)
+    isDetectingRef.current = true
     shouldContinueDetectionRef.current = true
     
     // Start the detection loop (will self-schedule after each completion)
@@ -209,6 +213,7 @@ export default function LiveCamera() {
 
   const stopDetection = () => {
     setIsDetecting(false)
+    isDetectingRef.current = false
     shouldContinueDetectionRef.current = false
     
     if (detectionIntervalRef.current) {
@@ -284,7 +289,7 @@ export default function LiveCamera() {
                   <canvas
                     ref={overlayCanvasRef}
                     className="absolute inset-0 w-full h-full"
-                    style={{ pointerEvents: 'none' }}
+                    style={{ pointerEvents: 'none', opacity: isDetecting ? 1 : 0, transition: 'opacity 120ms linear' }}
                   />
                 </div>
               )}
