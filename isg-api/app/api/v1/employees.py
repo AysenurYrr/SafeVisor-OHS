@@ -324,8 +324,8 @@ def delete_employee(
             status_code=500,
             detail="Failed to delete employee"
         )
-    
-    return {"message": "Employee deleted successfully"}
+
+    return {"message": "Employee deleted successfully", "deleted": True, "employee_uuid": employee_uuid}
 
 
 @router.get("/departments/list")

@@ -153,13 +153,22 @@ def update_employee(
 
 
 def delete_employee(db: Session, employee_id: int) -> bool:
-    """Delete employee (soft delete by setting is_active to False)"""
+    """Hard delete an employee and associated photos.
+
+    This permanently removes the employee row. Related collections using
+    ON DELETE CASCADE or relationship cascades (e.g., photos with cascade='all, delete-orphan')
+    will be removed automatically.
+    """
     db_employee = get_employee(db, employee_id)
     if not db_employee:
         return False
-    
-    db_employee.is_active = False
-    db.commit()
+
+    db.delete(db_employee)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        return False
     return True
 
 
