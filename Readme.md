@@ -1,5 +1,7 @@
 # SafeVisor-OHS
 
+Deenenememmdkdmsllfmcsşlkdvnzfdlşjbdlk
+
 Monorepo containing:
 - `isg-api` — FastAPI backend (JWT auth, RBAC, Alembic, Postgres/SQLite)
 - `isg-web` — React + Vite frontend integrating with the backend
