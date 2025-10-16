@@ -1,5 +1,7 @@
+import json
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
-from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -18,20 +20,22 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # CORS
-    BACKEND_CORS_ORIGINS: list = [
-        "http://localhost:3000",
-        "http://localhost:5173", 
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-        # Include alternate Vite port when 5173 is busy
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080"
-    ]
+    BACKEND_CORS_ORIGINS: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+            # Include alternate Vite port when 5173 is busy
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ]
+    )
     
     # Security
-    BCRYPT_SCHEMES: list = ["argon2", "bcrypt"]
+    BCRYPT_SCHEMES: list[str] = ["argon2", "bcrypt"]
     BCRYPT_DEPRECATED: str = "auto"
     
     # File upload
@@ -41,6 +45,39 @@ class Settings(BaseSettings):
     # Admin user (for initial setup)
     FIRST_SUPERUSER_EMAIL: str = "admin@isg.com"
     FIRST_SUPERUSER_PASSWORD: str = "admin123"
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, value):
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return []
+
+            if value.startswith("[") and value.endswith("]"):
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        return [str(origin).strip() for origin in parsed if str(origin).strip()]
+                except json.JSONDecodeError:
+                    pass
+
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+        if isinstance(value, (list, tuple, set)):
+            cleaned = []
+            for origin in value:
+                if origin is None:
+                    continue
+                origin_str = str(origin).strip()
+                if origin_str:
+                    cleaned.append(origin_str)
+            return cleaned
+
+        return []
     
     class Config:
         env_file = ".env"

@@ -11,17 +11,58 @@ export default function Dashboard() {
   const [poseAlerts, setPoseAlerts] = useState([])
   const [loading, setLoading] = useState(true)
 
+  const normalizeEvents = (payload, key) => {
+    if (Array.isArray(payload)) {
+      return payload
+    }
+    if (payload && Array.isArray(payload[key])) {
+      return payload[key]
+    }
+    if (Array.isArray(payload?.results)) {
+      return payload.results
+    }
+    if (Array.isArray(payload?.items)) {
+      return payload.items
+    }
+    return []
+  }
+
   useEffect(() => {
-    (async () => {
-      setLoading(true)
-      const [v, p] = await Promise.all([
-        EventsAPI.violations(),
-        EventsAPI.pose(),
-      ])
-      setViolations(v.slice(0, 5))
-      setPoseAlerts(p.slice(0, 5))
-      setLoading(false)
-    })()
+    let active = true
+
+    const loadDashboardData = async () => {
+      try {
+        setLoading(true)
+        const [v, p] = await Promise.all([
+          EventsAPI.violations(),
+          EventsAPI.pose(),
+        ])
+
+        if (!active) return
+
+        const latestViolations = normalizeEvents(v, 'violations').slice(0, 5)
+        const latestPoseAlerts = normalizeEvents(p, 'pose_alerts').slice(0, 5)
+
+        setViolations(latestViolations)
+        setPoseAlerts(latestPoseAlerts)
+      } catch (error) {
+        console.error('Failed to load dashboard events', error)
+        if (active) {
+          setViolations([])
+          setPoseAlerts([])
+        }
+      } finally {
+        if (active) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadDashboardData()
+
+    return () => {
+      active = false
+    }
   }, [])
 
   // Mock statistics - in real app, this would come from API
@@ -61,8 +102,8 @@ export default function Dashboard() {
   ]
 
   const recentViolationColumns = [
-    { 
-      header: 'Employee', 
+    {
+      header: 'Employee',
       accessor: 'employee',
       icon: 'person',
       cell: (row) => (
@@ -74,8 +115,8 @@ export default function Dashboard() {
         </div>
       )
     },
-    { 
-      header: 'Camera', 
+    {
+      header: 'Camera',
       accessor: 'camera',
       icon: 'cameras',
       cell: (row) => (
@@ -85,13 +126,13 @@ export default function Dashboard() {
         </div>
       )
     },
-    { 
-      header: 'Date', 
+    {
+      header: 'Date',
       accessor: 'date',
       icon: 'calendar'
     },
-    { 
-      header: 'Violation Type', 
+    {
+      header: 'Violation Type',
       accessor: 'desc',
       cell: (row) => (
         <span className="badge-warning">{row.desc}</span>
@@ -100,8 +141,8 @@ export default function Dashboard() {
   ]
 
   const recentPoseColumns = [
-    { 
-      header: 'Employee', 
+    {
+      header: 'Employee',
       accessor: 'employee',
       icon: 'person',
       cell: (row) => (
@@ -113,8 +154,8 @@ export default function Dashboard() {
         </div>
       )
     },
-    { 
-      header: 'Camera', 
+    {
+      header: 'Camera',
       accessor: 'camera',
       icon: 'cameras',
       cell: (row) => (
@@ -124,13 +165,13 @@ export default function Dashboard() {
         </div>
       )
     },
-    { 
-      header: 'Date', 
+    {
+      header: 'Date',
       accessor: 'date',
       icon: 'calendar'
     },
-    { 
-      header: 'Alert Type', 
+    {
+      header: 'Alert Type',
       accessor: 'alert',
       cell: (row) => (
         <span className="badge-danger">{row.alert}</span>
@@ -176,7 +217,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        
+
         <div className="card-interactive p-6">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-success-100 rounded-xl">
@@ -188,7 +229,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        
+
         <div className="card-interactive p-6">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-warning-100 rounded-xl">
@@ -224,7 +265,7 @@ export default function Dashboard() {
             />
           )}
         </div>
-        
+
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-neutral-900 flex items-center gap-2">
