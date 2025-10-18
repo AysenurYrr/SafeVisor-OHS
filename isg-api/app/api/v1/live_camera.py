@@ -134,7 +134,10 @@ async def detect_frame(
             if det["cls_name"].lower() == "face" and face_recognition_enabled:
                 try:
                     # Crop face from frame
-                    face_crop = frame[y1:y2, x1:x2]
+                    pad = int(0.2 * max(x2 - x1, y2 - y1))
+                    x1e = max(0, x1 - pad); y1e = max(0, y1 - pad)
+                    x2e = min(frame.shape[1], x2 + pad); y2e = min(frame.shape[0], y2 + pad)
+                    face_crop = frame[y1e:y2e, x1e:x2e]
                     
                     if face_crop.size > 0:
                         # Recognize face

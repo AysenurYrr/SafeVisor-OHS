@@ -62,4 +62,7 @@ def generate_employee_embedding(employee_id: int, photo_paths: List[str]) -> Opt
         LOGGER.warning("No face embeddings generated for employee_id=%s", employee_id)
         return None
     mean_vec = np.mean(vectors, axis=0)
+    norm = np.linalg.norm(mean_vec)
+    if norm > 0:
+        mean_vec = mean_vec / norm
     return mean_vec.astype(float).tolist()
