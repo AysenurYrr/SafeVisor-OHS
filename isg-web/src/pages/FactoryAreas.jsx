@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { FactoryAreasAPI, CamerasAPI, api } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import Icon from '../components/Icon'
@@ -9,6 +10,7 @@ import Loading from '../components/Loading'
 export default function FactoryAreas() {
   // Bring in hasRole to centralize permission checks
   const { user, hasRole, token } = useAuth()
+  const navigate = useNavigate()
   const [areas, setAreas] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -31,8 +33,6 @@ export default function FactoryAreas() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [selectedArea, setSelectedArea] = useState(null)
   const [availableCameras, setAvailableCameras] = useState([])
-  const [showCameraViewer, setShowCameraViewer] = useState(false)
-  const [selectedCamera, setSelectedCamera] = useState(null)
 
   // Permissions using centralized role helper (handles aliases internally)
   const canManageAreas = hasRole(['ADMIN', 'ADMIN (IT)', 'MANAGER'])
@@ -226,13 +226,18 @@ export default function FactoryAreas() {
   }
 
   const handleWatchCamera = (camera) => {
-    setSelectedCamera(camera)
-    setShowCameraViewer(true)
-  }
-
-  const closeCameraViewer = () => {
-    setShowCameraViewer(false)
-    setSelectedCamera(null)
+    // Navigate to Cameras page with camera and area information
+    navigate('/cameras', {
+      state: {
+        cameraId: camera.id,
+        camera: camera,
+        factoryArea: {
+          id: selectedArea.id,
+          name: selectedArea.name,
+          safetyRules: selectedArea.safety_rules || []
+        }
+      }
+    })
   }
 
   // Adapted to Table component API (header, accessor, cell)
@@ -616,54 +621,6 @@ export default function FactoryAreas() {
                   </div>
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Camera Viewer Modal */}
-      {showCameraViewer && selectedCamera && (
-        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full">
-            {/* Viewer Header */}
-            <div className="bg-neutral-800 text-white px-6 py-4 flex justify-between items-center rounded-t-lg">
-              <div>
-                <h2 className="text-xl font-semibold">{selectedCamera.name}</h2>
-                <p className="text-sm text-neutral-300">{selectedCamera.location}</p>
-                {selectedArea && (
-                  <p className="text-xs text-neutral-400 mt-1">
-                    Area: {selectedArea.name} | Rules: {selectedArea.safety_rules?.join(', ') || 'None'}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={closeCameraViewer}
-                className="text-white hover:text-neutral-300"
-              >
-                <Icon name="x" className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Video Player */}
-            <div className="p-6 bg-neutral-900">
-              <div className="relative bg-black rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
-                <video
-                  key={selectedCamera.id}
-                  src={`${selectedCamera.stream_url}?token=${encodeURIComponent(token || '')}`}
-                  controls
-                  autoPlay
-                  loop
-                  className="w-full h-full"
-                >
-                  Your browser does not support the video tag.
-                </video>
-              </div>
-              <div className="mt-4 text-white text-sm">
-                <p>🔴 Live Feed - PPE Detection Active</p>
-                <p className="text-neutral-400 mt-1">
-                  Detection rules based on factory area: {selectedArea?.safety_rules?.join(', ') || 'No rules'}
-                </p>
-              </div>
             </div>
           </div>
         </div>

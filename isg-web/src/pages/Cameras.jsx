@@ -1,9 +1,12 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 
 export default function Cameras() {
   const { token, user } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [selected, setSelected] = useState(1)
   const [isDetectionMode, setIsDetectionMode] = useState(false)
   const isDetectionModeRef = useRef(false)
@@ -23,6 +26,10 @@ export default function Cameras() {
   const [detectionsTick, setDetectionsTick] = useState(0)
   const hasDetectionFrame = !!latestFrameRef.current?.canvas
   
+  // Factory area information from navigation state
+  const [factoryAreaInfo, setFactoryAreaInfo] = useState(null)
+  const [autoStartDetection, setAutoStartDetection] = useState(false)
+  
   const cameras = useMemo(() => ([
     { id: 1, name: 'Camera-1', desc: 'Demo stream 1 (demo.mp4)' },
     { id: 2, name: 'Camera-2', desc: 'Demo stream 2 (demo2.mp4)' },
@@ -31,6 +38,32 @@ export default function Cameras() {
 
   const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream?token=${encodeURIComponent(token || '')}`
   // detectionSrc removed; detection handled client-side via frame capture
+
+  // Handle navigation from Factory Areas
+  useEffect(() => {
+    if (location.state) {
+      const { cameraId, factoryArea } = location.state
+      if (cameraId && factoryArea) {
+        setSelected(cameraId)
+        setFactoryAreaInfo(factoryArea)
+        setAutoStartDetection(true)
+        // Clear the state to prevent re-triggering
+        navigate(location.pathname, { replace: true, state: {} })
+      }
+    }
+  }, [location.state, navigate])
+
+  // Auto-start detection when coming from Factory Areas
+  useEffect(() => {
+    if (autoStartDetection && !isDetectionMode && videoRef.current) {
+      // Wait for video to be ready
+      const timer = setTimeout(() => {
+        startDetection()
+        setAutoStartDetection(false)
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [autoStartDetection, isDetectionMode])
 
   // Fetch violations periodically when detection is active
   useEffect(() => {
@@ -291,10 +324,42 @@ export default function Cameras() {
 
   return (
     <div className="space-y-4">
+      {/* Factory Area Information Banner */}
+      {factoryAreaInfo && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-blue-900">
+                Factory Area: {factoryAreaInfo.name}
+              </h3>
+              <p className="text-sm text-blue-700 mt-1">
+                Active Safety Rules: {factoryAreaInfo.safetyRules.length > 0 ? (
+                  <span className="font-medium">{factoryAreaInfo.safetyRules.join(', ')}</span>
+                ) : (
+                  <span>No rules defined</span>
+                )}
+              </p>
+              <p className="text-xs text-blue-600 mt-2">
+                🔴 PPE Detection is running automatically with the factory area's safety rules
+              </p>
+            </div>
+            <button
+              onClick={() => setFactoryAreaInfo(null)}
+              className="text-blue-600 hover:text-blue-800"
+              title="Clear factory area context"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Cameras</h1>
         <div className="space-x-2">
-          {!isDetectionMode ? (
+          {!factoryAreaInfo && !isDetectionMode ? (
             <button
               onClick={startDetection}
               disabled={loading}
@@ -302,14 +367,26 @@ export default function Cameras() {
             >
               {loading ? 'Starting...' : 'Run PPE Detection'}
             </button>
-          ) : (
+          ) : factoryAreaInfo && isDetectionMode ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-green-600 font-medium">
+                ✓ Detection Active
+              </span>
+              <button
+                onClick={stopDetection}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Stop Detection
+              </button>
+            </div>
+          ) : isDetectionMode ? (
             <button
               onClick={stopDetection}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
             >
               Stop Detection
             </button>
-          )}
+          ) : null}
         </div>
       </div>
 
