@@ -15,6 +15,8 @@ from detector import YoloDetector
 from face_tracker import FaceTracker
 from evaluator import evaluate_person
 from face_recognizer import enroll_person, img_to_embedding_pil, recognize_face
+from temporal_tracker import TemporalTracker
+from violation_manager import ViolationManager
 
 # ===============================
 # 🔧 Uygulama Başlatma
@@ -28,8 +30,25 @@ camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 detector = YoloDetector("models/yolo9e.pt")
 tracker = FaceTracker()
 
+# ✅ Yeni temporal tracker ve violation manager
+temporal_tracker = TemporalTracker(
+    max_distance=100,
+    max_missing_frames=30,
+    grace_frames=2,
+    confidence_threshold=0.2
+)
+violation_manager = ViolationManager(
+    factory_area_name="Ana Üretim Alanı",
+    camera_name="Kamera 1",
+    min_consecutive_frames=5,
+    violation_timeout=5.0,
+    cleanup_interval=30.0,
+    violations_dir="violations/images"
+)
+
 # ✅ Yüz ID ↔ isim eşlemesi (bellek içi)
 recognized_map = {}  # face_id -> person_id
+frame_count = 0
 
 # ===============================
 # 💬 Etiket Haritaları
@@ -75,6 +94,12 @@ def get_config():
 async def update_config(req: Request):
     cfg = await req.json()
     save_config(cfg)
+    
+    # Update violation manager with required PPE
+    required_items = cfg.get("required_items", [])
+    if required_items:
+        violation_manager.set_required_ppe(required_items)
+    
     return JSONResponse({"ok": True})
 
 # ===============================
@@ -83,57 +108,114 @@ async def update_config(req: Request):
 @app.websocket("/ws")
 async def get_stream(websocket: WebSocket):
     await websocket.accept()
+    global frame_count
     try:
         while True:
             success, frame = camera.read()
             if not success:
                 break
 
+            frame_count += 1
             detections = detector.infer(frame)
             config = load_config()
             required_items = [item.strip().lower() for item in config.get("required_items", [])]
+            
+            # Update violation manager with required items
+            violation_manager.set_required_ppe(required_items)
 
-            # 1️⃣ Yüzleri filtrele
-            face_boxes = [det["box"] for det in detections if det["cls_name"].lower() == "face"]
-            tracked_faces = tracker.update(face_boxes)
-
-            # 2️⃣ Yüz tanıma + ID eşleştirme
-            for face in tracked_faces:
-                fid = face["id"]
-                x1, y1, x2, y2 = face["box"]
-                color = get_color_for(f"face_{fid}")
-
+            # 1️⃣ Update temporal tracker with all detections
+            recognitions = {}
+            
+            # Extract face detections for recognition
+            face_detections = [det for det in detections if det["cls_name"].lower() == "face"]
+            
+            for face_det in face_detections:
+                x1, y1, x2, y2 = face_det["box"]
                 face_img = frame[y1:y2, x1:x2]
-                if face_img.size == 0:
-                    continue
+                
+                if face_img.size > 0:
+                    # Embedding çıkar
+                    face_pil = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
+                    emb = img_to_embedding_pil(face_pil)
+                    
+                    if emb is not None:
+                        match_id, score = recognize_face(emb)
+                        
+                        # Find corresponding person in tracker (will be assigned after update)
+                        # For now, we'll update recognitions after tracking
+                        if match_id and score is not None:
+                            # Store temporarily with face box for matching
+                            face_center = ((x1 + x2) // 2, (y1 + y2) // 2)
+                            recognitions[face_center] = (match_id, 1.0 - score)  # Convert distance to confidence
+            
+            # Update temporal tracker
+            tracked_persons = temporal_tracker.update_frame(detections)
+            
+            # Match recognitions to tracked persons
+            for person in tracked_persons:
+                px1, py1, px2, py2 = person.box
+                person_center = ((px1 + px2) // 2, (py1 + py2) // 2)
+                
+                # Find closest face recognition
+                best_match = None
+                best_distance = float('inf')
+                
+                for face_center, (name, conf) in recognitions.items():
+                    dist = np.hypot(person_center[0] - face_center[0], 
+                                  person_center[1] - face_center[1])
+                    if dist < best_distance and dist < 100:  # 100 pixel threshold
+                        best_distance = dist
+                        best_match = (name, conf)
+                
+                if best_match:
+                    person.update_recognition(best_match[0], best_match[1], 
+                                            frame_count, confidence_threshold=0.2)
 
-                # Embedding çıkar
-                face_pil = Image.fromarray(cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB))
-                emb = img_to_embedding_pil(face_pil)
-                match_id = None
-                score = None
+            # 2️⃣ Check for violations with temporal consistency
+            violations_to_report = violation_manager.check_violations(
+                tracked_persons, frame, frame_count
+            )
+            
+            # Log any new violations
+            if violations_to_report:
+                for violation in violations_to_report:
+                    print(f"[VIOLATION] {violation['employee_name']}: {violation['violation_type']} "
+                          f"({violation['duration_frames']} frames)")
 
-                if emb is not None:
-                    match_id, score = recognize_face(emb)
-                    print(f"[RECOGNIZER] Match ID: {match_id} | Score: {score:.3f}")
-
-                    # ✅ Eşleşen kişi belleğe eklenir
-                    if match_id:
-                        recognized_map[fid] = match_id
-
-                # ✅ Stabil isim gösterimi
-                name_label = recognized_map.get(fid, f"Unknown ({fid})")
-
+            # 3️⃣ Draw tracked persons with stable recognition
+            for person in tracked_persons:
+                x1, y1, x2, y2 = person.box
+                color = get_color_for(f"person_{person.person_id}")
+                
+                # Stabil isim gösterimi
+                name_label = person.recognized_name or f"Unknown ({person.person_id})"
+                
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(frame, name_label, (x1, y1 - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                
+                # Show PPE status
+                y_offset = y1 - 30
+                for ppe_type in required_items:
+                    has_ppe = person.get_stable_ppe_status(ppe_type, frame_count, grace_frames=2)
+                    status_text = f"{ppe_type}: {'✓' if has_ppe else '✗'}"
+                    status_color = (0, 255, 0) if has_ppe else (0, 0, 255)
+                    
+                    cv2.putText(frame, status_text, (x1, y_offset),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, status_color, 1)
+                    y_offset -= 15
 
-            # 3️⃣ Diğer tespitleri çiz
+            # 4️⃣ Diğer tespitleri çiz (PPE ekipmanları)
             for det in detections:
                 if det["conf"] >= 0.6:
                     x1, y1, x2, y2 = det["box"]
                     label = det["cls_name"]
                     label_lower = label.lower()
+                    
+                    # Skip person/face (already drawn above)
+                    if label_lower in ['person', 'face']:
+                        continue
+                    
                     color = get_color_for(label)
                     label_text = label_map["tr"].get(label, label)
                     thickness = 4 if label_lower in required_items else 1
@@ -142,10 +224,14 @@ async def get_stream(websocket: WebSocket):
                     cv2.putText(frame, f"{label_text} ({det['conf']:.0%})", (x1, y1 - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
-            # 4️⃣ Frame gönder
+            # 5️⃣ Frame gönder
             _, buffer = cv2.imencode(".jpg", frame)
             await websocket.send_bytes(buffer.tobytes())
             await asyncio.sleep(0.02)
+            
+            # Periodic cleanup
+            if frame_count % 300 == 0:  # Every 10 seconds at 30 FPS
+                temporal_tracker.cleanup_old_persons(max_age_seconds=30.0)
 
     except (WebSocketDisconnect, Exception) as e:
         print("[!] WS Disconnect:", e)
