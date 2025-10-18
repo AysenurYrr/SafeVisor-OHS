@@ -237,6 +237,10 @@ def _seed_defaults():
         ensure_user("hse@isg.com", "hse123", "HSE Expert", "HSE_EXPERT")
         ensure_user("it@isg.com", "it123", "IT Admin", "IT_ADMIN")
 
+        # Seed demo cameras
+        from app.models.camera import Camera
+        _seed_demo_cameras(db, role_map.get("ADMIN"))
+        
         # Seed departments and positions if tables are empty
         from app.models.department import Department
         from app.models.position import Position
@@ -332,6 +336,69 @@ def _seed_defaults():
                 db.commit()
     finally:
         db.close()
+
+
+def _seed_demo_cameras(db: SessionLocal, admin_role: Role = None):
+    """Seed demo cameras that correspond to demo video files"""
+    # Get the admin user to use as created_by
+    admin = db.query(User).filter(User.email == "admin@isg.com").first()
+    if not admin:
+        return
+    
+    from app.models.camera import Camera
+    
+    # Define demo cameras that match the video files used in the Cameras page
+    cameras_data = [
+        {
+            "id": 1,
+            "name": "Camera-1",
+            "location": "Main Floor - Factory Area 1",
+            "stream_url": "/api/v1/cameras/1/stream",
+            "camera_type": "demo",
+            "description": "Demo camera streaming demo.mp4",
+        },
+        {
+            "id": 2,
+            "name": "Camera-2",
+            "location": "Assembly Line - Factory Area 2",
+            "stream_url": "/api/v1/cameras/2/stream",
+            "camera_type": "demo",
+            "description": "Demo camera streaming demo2.mp4",
+        },
+        {
+            "id": 3,
+            "name": "Camera-3",
+            "location": "Storage Area - Factory Area 3",
+            "stream_url": "/api/v1/cameras/3/stream",
+            "camera_type": "demo",
+            "description": "Demo camera streaming demo3.mp4",
+        },
+    ]
+    
+    for data in cameras_data:
+        camera = db.query(Camera).filter(Camera.name == data["name"]).first()
+        if not camera:
+            camera = Camera(
+                id=data["id"],
+                name=data["name"],
+                location=data["location"],
+                stream_url=data["stream_url"],
+                camera_type=data["camera_type"],
+                description=data["description"],
+                resolution="1920x1080",
+                fps=30,
+                is_active=True,
+                is_recording=False,
+                detection_enabled=True,
+                ppe_detection=True,
+                pose_detection=True,
+                face_recognition=True,
+                created_by=admin.id,
+            )
+            db.add(camera)
+    
+    db.commit()
+
 
 @app.on_event("startup")
 def on_startup():
