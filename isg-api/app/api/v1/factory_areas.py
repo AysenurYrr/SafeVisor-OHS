@@ -205,3 +205,103 @@ def get_active_factory_areas(
         area.safety_rules = crud_factory_area.get_area_safety_rules(db, area.id)
     
     return areas
+
+
+@router.post("/{area_id}/cameras/{camera_id}/link")
+def link_camera_to_area(
+    *,
+    db: Session = Depends(deps.get_db),
+    area_id: int,
+    camera_id: int,
+    current_user: User = Depends(deps.check_manager_or_admin_role),
+) -> dict:
+    """
+    Link a camera to a factory area (Manager/Admin only)
+    """
+    from app.models.camera import Camera
+    
+    area = crud_factory_area.get_factory_area(db, area_id=area_id)
+    if not area:
+        raise HTTPException(status_code=404, detail="Factory area not found")
+    
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    
+    # Check if camera is already linked to another area
+    if camera.factory_area_id is not None and camera.factory_area_id != area_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Camera '{camera.name}' is already linked to another factory area"
+        )
+    
+    camera.factory_area_id = area_id
+    db.commit()
+    
+    return {"message": f"Camera '{camera.name}' linked to factory area '{area.name}'"}
+
+
+@router.delete("/{area_id}/cameras/{camera_id}/unlink")
+def unlink_camera_from_area(
+    *,
+    db: Session = Depends(deps.get_db),
+    area_id: int,
+    camera_id: int,
+    current_user: User = Depends(deps.check_manager_or_admin_role),
+) -> dict:
+    """
+    Unlink a camera from a factory area (Manager/Admin only)
+    """
+    from app.models.camera import Camera
+    
+    area = crud_factory_area.get_factory_area(db, area_id=area_id)
+    if not area:
+        raise HTTPException(status_code=404, detail="Factory area not found")
+    
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    
+    if camera.factory_area_id != area_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Camera '{camera.name}' is not linked to this factory area"
+        )
+    
+    camera.factory_area_id = None
+    db.commit()
+    
+    return {"message": f"Camera '{camera.name}' unlinked from factory area '{area.name}'"}
+
+
+@router.get("/{area_id}/available-cameras")
+def get_available_cameras(
+    *,
+    db: Session = Depends(deps.get_db),
+    area_id: int,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> List[dict]:
+    """
+    Get list of cameras that are not linked to any factory area (available for linking)
+    """
+    from app.models.camera import Camera
+    
+    area = crud_factory_area.get_factory_area(db, area_id=area_id)
+    if not area:
+        raise HTTPException(status_code=404, detail="Factory area not found")
+    
+    # Get all cameras that are not linked to any area
+    available_cameras = db.query(Camera).filter(Camera.factory_area_id == None).all()
+    
+    return [
+        {
+            "id": cam.id,
+            "name": cam.name,
+            "location": cam.location,
+            "stream_url": cam.stream_url,
+            "is_active": cam.is_active,
+            "camera_type": cam.camera_type,
+        }
+        for cam in available_cameras
+    ]
+

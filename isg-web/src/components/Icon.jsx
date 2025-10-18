@@ -27,6 +27,7 @@ import {
   ExclamationCircleIcon,
   PlayIcon,
   StopIcon,
+  ArrowPathIcon,
   // Dashboard icons
   UserIcon,
   BuildingOfficeIcon,
@@ -111,6 +112,9 @@ const iconMap = {
   wifi: WifiIcon,
   bolt: BoltIcon,
   heart: HeartIcon,
+  refresh: ArrowPathIcon,
+  eye: EyeIcon,
+  x: XMarkIcon,
 }
 
 export default function Icon({ name, className = "w-5 h-5", ...props }) {
