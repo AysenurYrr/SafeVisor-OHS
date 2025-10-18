@@ -20,8 +20,10 @@ export default function Cameras() {
   const [detectionsTick, setDetectionsTick] = useState(0)
   const hasDetectionFrame = !!latestFrameRef.current?.canvas
   
-  // Factory area information from navigation state
+  // Factory area information (fetched based on camera's factory_area_id)
   const [factoryAreaInfo, setFactoryAreaInfo] = useState(null)
+  const [cameraData, setCameraData] = useState(null)
+  const [loadingFactoryInfo, setLoadingFactoryInfo] = useState(false)
   
   const cameras = useMemo(() => ([
     { id: 1, name: 'Camera-1', desc: 'Demo stream 1 (demo.mp4)' },
@@ -30,6 +32,43 @@ export default function Cameras() {
   ]), [])
 
   const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream?token=${encodeURIComponent(token || '')}`
+
+  // Fetch camera data and factory area info
+  const fetchCameraAndFactoryInfo = useCallback(async (cameraId) => {
+    try {
+      setLoadingFactoryInfo(true)
+      
+      // Fetch camera data
+      const cameraResponse = await api.get(`/api/v1/cameras/${cameraId}`)
+      const camera = cameraResponse.data
+      setCameraData(camera)
+      
+      // If camera has factory_area_id, fetch factory area data
+      if (camera.factory_area_id) {
+        try {
+          const areaResponse = await api.get(`/api/v1/factory-areas/${camera.factory_area_id}`)
+          const area = areaResponse.data
+          setFactoryAreaInfo({
+            id: area.id,
+            name: area.name,
+            safetyRules: area.safety_rules || []
+          })
+        } catch (error) {
+          console.error('Failed to fetch factory area:', error)
+          setFactoryAreaInfo(null)
+        }
+      } else {
+        // Camera not linked to any factory area
+        setFactoryAreaInfo(null)
+      }
+    } catch (error) {
+      console.error('Failed to fetch camera data:', error)
+      setCameraData(null)
+      setFactoryAreaInfo(null)
+    } finally {
+      setLoadingFactoryInfo(false)
+    }
+  }, [])
 
   // Handle navigation from Factory Areas
   useEffect(() => {
@@ -43,6 +82,11 @@ export default function Cameras() {
       }
     }
   }, [location.state, navigate])
+
+  // Fetch camera and factory info whenever selected camera changes
+  useEffect(() => {
+    fetchCameraAndFactoryInfo(selected)
+  }, [selected, fetchCameraAndFactoryInfo])
 
   // Fetch violations periodically
   useEffect(() => {
@@ -269,31 +313,41 @@ export default function Cameras() {
 
   return (
     <div className="space-y-4">
-      {/* Factory Area Information Banner */}
-      {factoryAreaInfo && (
+      {/* Factory Area Information Banner - Always Shown */}
+      {loadingFactoryInfo ? (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <p className="text-sm text-gray-600">Loading factory area information...</p>
+        </div>
+      ) : factoryAreaInfo ? (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-blue-900">
-                Factory Area: {factoryAreaInfo.name}
-              </h3>
-              <p className="text-sm text-blue-700 mt-1">
-                Active Safety Rules: {factoryAreaInfo.safetyRules?.length > 0 ? (
-                  <span className="font-medium">{factoryAreaInfo.safetyRules.join(', ')}</span>
-                ) : (
-                  <span>No rules defined</span>
-                )}
-              </p>
-            </div>
-            <button
-              onClick={() => setFactoryAreaInfo(null)}
-              className="text-blue-600 hover:text-blue-800"
-              title="Clear factory area context"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+          <div>
+            <h3 className="text-lg font-semibold text-blue-900">
+              Factory Area: {factoryAreaInfo.name}
+            </h3>
+            <p className="text-sm text-blue-700 mt-1">
+              Active Safety Rules: {factoryAreaInfo.safetyRules?.length > 0 ? (
+                <span className="font-medium">{factoryAreaInfo.safetyRules.join(', ')}</span>
+              ) : (
+                <span>No rules defined</span>
+              )}
+            </p>
+            <p className="text-xs text-blue-600 mt-2">
+              🔴 PPE Detection active with factory area's safety rules
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div>
+            <h3 className="text-lg font-semibold text-amber-900">
+              No Factory Area Linked
+            </h3>
+            <p className="text-sm text-amber-700 mt-1">
+              This camera is not assigned to any factory area. Only face detection will be performed.
+            </p>
+            <p className="text-xs text-amber-600 mt-2">
+              💡 Link this camera to a factory area to enable PPE detection with safety rules
+            </p>
           </div>
         </div>
       )}
