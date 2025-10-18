@@ -4,7 +4,7 @@ Pydantic schemas for PPE detection system.
 
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class DetectionResponse(BaseModel):
@@ -47,5 +47,8 @@ class DetectionStatusResponse(BaseModel):
     supported_cameras: List[int] = Field(..., description="List of supported camera IDs")
     detection_classes: List[str] = Field(..., description="List of classes the model can detect")
 
-    class Config:
-        from_attributes = True
+    # Pydantic v2 config: allow protected namespaces and enable from_attributes
+    model_config: ConfigDict = ConfigDict(
+        protected_namespaces=(),
+        from_attributes=True,
+    )

@@ -1,7 +1,7 @@
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, text
-from app.models.factory_area import FactoryArea, area_cameras, area_rules
+from app.models.factory_area import FactoryArea, area_rules
 from app.models.camera import Camera
 from app.schemas.factory_area import FactoryAreaCreate, FactoryAreaUpdate
 
@@ -116,7 +116,7 @@ def update_factory_area(
     if not db_area:
         return None
     
-    update_data = area_update.dict(exclude_unset=True, exclude={'camera_ids', 'safety_rules'})
+    update_data = area_update.model_dump(exclude_unset=True, exclude={'camera_ids', 'safety_rules'})
     
     # Update basic fields
     for field, value in update_data.items():
@@ -177,11 +177,6 @@ def hard_delete_factory_area(db: Session, area_id: int) -> bool:
     # Delete associated rules (should cascade, but being explicit)
     db.execute(
         text("DELETE FROM area_rules WHERE area_id = :area_id"),
-        {"area_id": area_id}
-    )
-    # Delete associated cameras mapping explicitly (in case DB FK cascade not enforced)
-    db.execute(
-        text("DELETE FROM area_cameras WHERE area_id = :area_id"),
         {"area_id": area_id}
     )
     

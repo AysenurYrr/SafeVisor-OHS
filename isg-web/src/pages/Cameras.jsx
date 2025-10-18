@@ -8,13 +8,7 @@ export default function Cameras() {
   const location = useLocation()
   const navigate = useNavigate()
   const [selected, setSelected] = useState(1)
-  const [isDetectionMode, setIsDetectionMode] = useState(false)
-  const isDetectionModeRef = useRef(false)
-  const [detectionStatus, setDetectionStatus] = useState({})
   const [violations, setViolations] = useState([])
-  const [loading, setLoading] = useState(false)
-  const intervalRef = useRef(null)
-  const [nonce, setNonce] = useState(0)
   const videoRef = useRef(null)
   const overlayRef = useRef(null)
   const detectLoopRef = useRef(null)
@@ -28,7 +22,6 @@ export default function Cameras() {
   
   // Factory area information from navigation state
   const [factoryAreaInfo, setFactoryAreaInfo] = useState(null)
-  const [autoStartDetection, setAutoStartDetection] = useState(false)
   
   const cameras = useMemo(() => ([
     { id: 1, name: 'Camera-1', desc: 'Demo stream 1 (demo.mp4)' },
@@ -37,7 +30,6 @@ export default function Cameras() {
   ]), [])
 
   const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream?token=${encodeURIComponent(token || '')}`
-  // detectionSrc removed; detection handled client-side via frame capture
 
   // Handle navigation from Factory Areas
   useEffect(() => {
@@ -46,50 +38,28 @@ export default function Cameras() {
       if (cameraId && factoryArea) {
         setSelected(cameraId)
         setFactoryAreaInfo(factoryArea)
-        setAutoStartDetection(true)
         // Clear the state to prevent re-triggering
         navigate(location.pathname, { replace: true, state: {} })
       }
     }
   }, [location.state, navigate])
 
-  // Auto-start detection when coming from Factory Areas
+  // Fetch violations periodically
   useEffect(() => {
-    if (autoStartDetection && !isDetectionMode && videoRef.current) {
-      // Wait for video to be ready
-      const timer = setTimeout(() => {
-        startDetection()
-        setAutoStartDetection(false)
-      }, 500)
-      return () => clearTimeout(timer)
-    }
-  }, [autoStartDetection, isDetectionMode])
-
-  // Fetch violations periodically when detection is active
-  useEffect(() => {
-    if (isDetectionMode) {
-      // Fetch immediately
-      fetchViolations()
-      
-      // Set up periodic fetching every 5 seconds
-      intervalRef.current = setInterval(() => {
-        fetchViolations()
-      }, 5000)
-    } else {
-      // Clear interval when detection is stopped
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+    const fetchViolations = async () => {
+      try {
+        const response = await api.get(`/api/v1/detections/reports?limit=10&camera_id=${selected}`)
+        setViolations(response.data)
+      } catch (error) {
+        console.error('Failed to fetch violations:', error)
       }
     }
     
-    // Cleanup on unmount
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
-    }
-  }, [isDetectionMode])
+    fetchViolations() // Fetch immediately
+    const timer = setInterval(fetchViolations, 5000) // Set up periodic fetching
+    
+    return () => clearInterval(timer) // Cleanup on unmount or when `selected` changes
+  }, [selected])
 
   const paintDetections = useCallback((ctx, detections, baseWidth, baseHeight, scaleX, scaleY) => {
     if (!ctx || !detections?.length || !baseWidth || !baseHeight) {
@@ -150,7 +120,7 @@ export default function Cameras() {
     const frameInfo = latestFrameRef.current
     const baseWidth = frameInfo?.width || video.videoWidth || 1
     const baseHeight = frameInfo?.height || video.videoHeight || 1
-    if (isDetectionModeRef.current && frameInfo?.canvas) {
+    if (frameInfo?.canvas) {
       ctx.drawImage(frameInfo.canvas, 0, 0, rect.width, rect.height)
     }
     const scaleX = rect.width / baseWidth
@@ -160,92 +130,25 @@ export default function Cameras() {
     }
   }, [paintDetections])
 
-  useEffect(() => { drawDetections() }, [detectionsTick, drawDetections])
-
-  // Keep ref in sync to avoid stale closure in interval callbacks
-  useEffect(() => { isDetectionModeRef.current = isDetectionMode }, [isDetectionMode])
-
-  useEffect(() => {
-    return () => {
-      if (detectLoopRef.current) {
-        cancelAnimationFrame(detectLoopRef.current)
-        detectLoopRef.current = null
-      }
+  useEffect(() => { 
+    if(hasDetectionFrame) {
+      drawDetections() 
     }
-  }, [])
-
-  const captureAndDetect = useCallback(async () => {
-    const video = videoRef.current
-    if (!isDetectionModeRef.current || !video) return
-    if (processingRef.current) return
-    if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) return
-    processingRef.current = true
-    const startedAt = performance.now()
-    try {
-      let captureCanvas = captureCanvasRef.current
-      if (!captureCanvas) {
-        captureCanvas = document.createElement('canvas')
-        captureCanvasRef.current = captureCanvas
-      }
-      const vw = video.videoWidth
-      const vh = video.videoHeight
-      captureCanvas.width = vw
-      captureCanvas.height = vh
-      const cctx = captureCanvas.getContext('2d')
-      cctx.drawImage(video, 0, 0, vw, vh)
-      const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.6)
-      const payload = { frame: dataUrl, selected_rules: ['helmet', 'safety-vest', 'face'] }
-      const resp = await api.post('/api/v1/live-camera/detect', payload)
-      if (resp?.data?.detections) {
-        latestDetectionsRef.current = resp.data.detections
-      } else {
-        latestDetectionsRef.current = []
-      }
-      let displayCanvas = displayCanvasRef.current
-      if (!displayCanvas) {
-        displayCanvas = document.createElement('canvas')
-        displayCanvasRef.current = displayCanvas
-      }
-      displayCanvas.width = vw
-      displayCanvas.height = vh
-      const dctx = displayCanvas.getContext('2d')
-      dctx.drawImage(captureCanvas, 0, 0, vw, vh)
-      paintDetections(dctx, latestDetectionsRef.current, vw, vh, 1, 1)
-      latestFrameRef.current = {
-        canvas: displayCanvas,
-        width: vw,
-        height: vh,
-        capturedAt: performance.now(),
-        latency: performance.now() - startedAt,
-        annotated: true,
-      }
-      drawDetections()
-      setDetectionsTick(t => t + 1)
-      console.log(`[PPE] Detection result (n=${latestDetectionsRef.current.length}) in ${(performance.now() - startedAt).toFixed(0)}ms`)
-    } catch (error) {
-      console.log('[PPE] Detection error')
-    } finally {
-      processingRef.current = false
-    }
-  }, [drawDetections, paintDetections])
+  }, [detectionsTick, drawDetections, hasDetectionFrame])
 
   // Ensure the video element has enough data to extract frames
   const ensureVideoReady = useCallback(() => {
     return new Promise((resolve) => {
       const video = videoRef.current
-      if (!video) {
-        return resolve(false)
-      }
+      if (!video) return resolve(false)
       // HAVE_CURRENT_DATA = 2, HAVE_ENOUGH_DATA = 4
-      if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
-        return resolve(true)
-      }
+      if (video.readyState >= 2 && video.videoWidth && video.videoHeight) return resolve(true)
+      
       let attempts = 0
-      const maxAttempts = 25 // ~2.5s at 100ms
+      const maxAttempts = 25 // ~2.5s
       const interval = setInterval(() => {
         attempts++
-        const vs = video.readyState
-        if (vs >= 2 && video.videoWidth && video.videoHeight) {
+        if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
           clearInterval(interval)
           resolve(true)
         } else if (attempts >= maxAttempts) {
@@ -256,60 +159,102 @@ export default function Cameras() {
     })
   }, [])
 
-  const startDetection = async () => {
-    setLoading(true)
+  const captureAndDetect = useCallback(async () => {
+    const video = videoRef.current
+    if (!video || processingRef.current || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return
+    
+    processingRef.current = true
     try {
-  try { const response = await api.post(`/api/v1/detections/run/${selected}`, {}); setDetectionStatus(response.data || {}) } catch (_) {}
-  if (detectLoopRef.current) { cancelAnimationFrame(detectLoopRef.current); detectLoopRef.current = null }
-  setIsDetectionMode(true)
-  isDetectionModeRef.current = true
-      setNonce(Date.now())
-      console.log(`[PPE] Detection started (camera=${selected})`)
-      // Wait until video metadata & data are ready before starting loop
-      await ensureVideoReady()
+      let canvas = captureCanvasRef.current
+      if (!canvas) {
+        canvas = document.createElement('canvas')
+        captureCanvasRef.current = canvas
+      }
+      const vw = video.videoWidth
+      const vh = video.videoHeight
+      canvas.width = vw
+      canvas.height = vh
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(video, 0, 0, vw, vh)
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
+      const payload = { frame: dataUrl, selected_rules: ['helmet', 'safety-vest', 'face'] }
+      const resp = await api.post('/api/v1/live-camera/detect', payload)
+      
+      latestDetectionsRef.current = resp?.data?.detections || []
+      
+      let displayCanvas = displayCanvasRef.current
+      if (!displayCanvas) {
+        displayCanvas = document.createElement('canvas')
+        displayCanvasRef.current = displayCanvas
+      }
+      displayCanvas.width = vw
+      displayCanvas.height = vh
+      const dctx = displayCanvas.getContext('2d')
+      dctx.drawImage(canvas, 0, 0, vw, vh)
+      paintDetections(dctx, latestDetectionsRef.current, vw, vh, 1, 1)
+      
+      latestFrameRef.current = {
+        canvas: displayCanvas,
+        width: vw,
+        height: vh,
+        capturedAt: performance.now(),
+        annotated: true,
+      }
+      setDetectionsTick(t => t + 1)
+    } catch (error) {
+      console.error('[DETECTION] Frame analysis failed:', error)
+    } finally {
+      processingRef.current = false
+    }
+  }, [paintDetections])
+
+  // This effect handles the entire detection lifecycle.
+  useEffect(() => {
+    let isActive = true
+
+    const startDetection = async () => {
+      try {
+        await api.post(`/api/v1/detections/run/${selected}`, {})
+      } catch (_) {
+        console.error("Failed to notify backend of detection start.")
+      }
+      
+      console.log(`[DETECTION] Auto-starting for camera=${selected}`)
+      
+      const isReady = await ensureVideoReady()
+      if (!isReady || !isActive) return
+      
       const loop = () => {
-        if (!isDetectionModeRef.current) return
+        if (!isActive) return
         captureAndDetect().finally(() => {
-          if (!isDetectionModeRef.current) return
-          detectLoopRef.current = requestAnimationFrame(loop)
+          if (isActive) {
+            detectLoopRef.current = requestAnimationFrame(loop)
+          }
         })
       }
-      // Kick off loop immediately
-      loop()
-      await fetchViolations()
-    } catch (error) {
-      console.error('Failed to start detection:', error)
-      alert('Failed to start PPE detection. Please check if the AI model is loaded.')
-    } finally {
-      setLoading(false)
+      detectLoopRef.current = requestAnimationFrame(loop)
     }
-  }
 
-  const stopDetection = () => {
-    setIsDetectionMode(false)
-    isDetectionModeRef.current = false
-    setDetectionStatus({})
-    setNonce(Date.now())
-    if (detectLoopRef.current) { cancelAnimationFrame(detectLoopRef.current); detectLoopRef.current = null }
-    latestDetectionsRef.current = []
-  latestFrameRef.current = { canvas: null, width: 0, height: 0, capturedAt: 0, annotated: false }
-    // Clear overlay
-    const canvas = overlayRef.current
-    if (canvas) {
-      const ctx = canvas.getContext('2d')
-      ctx && ctx.clearRect(0,0,canvas.width,canvas.height)
-    }
-    setDetectionsTick(t => t + 1)
-  }
+    startDetection()
 
-  const fetchViolations = async () => {
-    try {
-      const response = await api.get(`/api/v1/detections/reports?limit=10&camera_id=${selected}`)
-      setViolations(response.data)
-    } catch (error) {
-      console.error('Failed to fetch violations:', error)
+    // Return a cleanup function
+    return () => {
+      isActive = false
+      if (detectLoopRef.current) {
+        cancelAnimationFrame(detectLoopRef.current)
+      }
+      // Clear canvas and reset state when camera changes
+      latestDetectionsRef.current = []
+      latestFrameRef.current = { canvas: null, width: 0, height: 0, capturedAt: 0, annotated: false }
+      const canvas = overlayRef.current
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        ctx?.clearRect(0, 0, canvas.width, canvas.height)
+      }
+      setDetectionsTick(t => t + 1)
+      console.log(`[DETECTION] Stopped for camera=${selected}`)
     }
-  }
+  }, [selected, ensureVideoReady, captureAndDetect])
 
   const getViolationBadgeColor = (type) => {
     switch (type) {
@@ -333,14 +278,11 @@ export default function Cameras() {
                 Factory Area: {factoryAreaInfo.name}
               </h3>
               <p className="text-sm text-blue-700 mt-1">
-                Active Safety Rules: {factoryAreaInfo.safetyRules.length > 0 ? (
+                Active Safety Rules: {factoryAreaInfo.safetyRules?.length > 0 ? (
                   <span className="font-medium">{factoryAreaInfo.safetyRules.join(', ')}</span>
                 ) : (
                   <span>No rules defined</span>
                 )}
-              </p>
-              <p className="text-xs text-blue-600 mt-2">
-                🔴 PPE Detection is running automatically with the factory area's safety rules
               </p>
             </div>
             <button
@@ -358,43 +300,7 @@ export default function Cameras() {
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Cameras</h1>
-        <div className="space-x-2">
-          {!factoryAreaInfo && !isDetectionMode ? (
-            <button
-              onClick={startDetection}
-              disabled={loading}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-            >
-              {loading ? 'Starting...' : 'Run PPE Detection'}
-            </button>
-          ) : factoryAreaInfo && isDetectionMode ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-green-600 font-medium">
-                ✓ Detection Active
-              </span>
-              <button
-                onClick={stopDetection}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-              >
-                Stop Detection
-              </button>
-            </div>
-          ) : isDetectionMode ? (
-            <button
-              onClick={stopDetection}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-            >
-              Stop Detection
-            </button>
-          ) : null}
-        </div>
       </div>
-
-      {detectionStatus.message && (
-        <div className="bg-blue-50 border border-blue-200 rounded p-3">
-          <p className="text-blue-800">{detectionStatus.message}</p>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="md:col-span-1 card p-4">
@@ -404,7 +310,7 @@ export default function Cameras() {
               <button
                 key={cam.id}
                 className={`w-full text-left px-3 py-2 rounded border ${selected === cam.id ? 'bg-primary-50 border-primary-400' : 'bg-white border-neutral-200 hover:bg-neutral-50'}`}
-                onClick={() => { setSelected(cam.id); setNonce(Date.now()); if (isDetectionMode) { stopDetection(); setTimeout(startDetection, 50) } }}
+                onClick={() => setSelected(cam.id)}
               >
                 <div className="font-medium">{cam.name}</div>
                 <div className="text-xs text-neutral-600">{cam.desc}</div>
@@ -416,37 +322,16 @@ export default function Cameras() {
         <div className="md:col-span-3 card p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-gray-600">Logged in as: {user?.full_name || user?.email}</p>
-            <div className="flex items-center space-x-2">
-              <label className="inline-flex items-center">
-                <input
-                  type="checkbox"
-                  checked={isDetectionMode}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      startDetection()
-                    } else {
-                      stopDetection()
-                    }
-                  }}
-                  disabled={loading}
-                  className="form-checkbox h-4 w-4 text-primary-600"
-                />
-                <span className="ml-2 text-sm">PPE Detection</span>
-              </label>
-              {isDetectionMode && (
-                <></>
-              )}
-              <span className={`px-2 py-1 rounded text-xs ${isDetectionMode ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                {isDetectionMode ? 'Detection ON' : 'Normal Video'}
-              </span>
-            </div>
+            <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-800 font-medium">
+              Detection Always ON
+            </span>
           </div>
           
           <div className="relative" style={{ width: '100%', maxHeight: 540 }}>
             <video
               key={`video-${selected}`}
               ref={videoRef}
-              src={normalSrc + '&v=' + nonce}
+              src={normalSrc}
               loop
               autoPlay
               muted
@@ -454,23 +339,18 @@ export default function Cameras() {
               controls={false}
               crossOrigin="anonymous"
               onLoadedMetadata={() => { try { videoRef.current?.play() } catch (_) {} }}
-              onLoadedData={() => { /* video data loaded */ }}
-              onPlay={() => { /* video playing */ }}
-              onEnded={(e) => { try { e.currentTarget.currentTime = 0; e.currentTarget.play() } catch (_) {} }}
-              style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block', opacity: isDetectionMode && hasDetectionFrame ? 0 : 1, transition: 'opacity 120ms ease' }}
+              style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block', opacity: hasDetectionFrame ? 0 : 1, transition: 'opacity 120ms ease' }}
               className="rounded"
             />
             <canvas
               ref={overlayRef}
               className="absolute inset-0 pointer-events-none"
-              style={{ width: '100%', height: '100%', zIndex: 5, opacity: isDetectionMode && hasDetectionFrame ? 1 : 0, transition: 'opacity 120ms ease' }}
+              style={{ width: '100%', height: '100%', zIndex: 5, opacity: hasDetectionFrame ? 1 : 0, transition: 'opacity 120ms ease' }}
             />
           </div>
           
           <p className="mt-2 text-xs text-gray-500">
-            {isDetectionMode
-              ? 'PPE Detection active. Showing most recent AI-annotated frame (Green=helmet, Yellow=vest, Blue=face).'
-              : "Looping demo video. Ensure demo files exist under /static/videos (demo.mp4, demo2.mp4, demo3.mp4)."}
+            Real-time detection is active. Showing most recent AI-annotated frame (Green=helmet, Yellow=vest, Blue=face).
           </p>
         </div>
       </div>
@@ -514,7 +394,7 @@ export default function Cameras() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getViolationBadgeColor(violation.violation_type)}`}>
-                        {violation.violation_type.replace('_', ' ')}
+                        {violation.violation_type.replace(/_/g, ' ')}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
