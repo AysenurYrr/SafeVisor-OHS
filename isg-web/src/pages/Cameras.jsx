@@ -14,10 +14,14 @@ export default function Cameras() {
   const [nonce, setNonce] = useState(0)
   const videoRef = useRef(null)
   const overlayRef = useRef(null)
-  const detectTimerRef = useRef(null)
+  const detectLoopRef = useRef(null)
   const processingRef = useRef(false)
   const latestDetectionsRef = useRef([])
+  const latestFrameRef = useRef({ canvas: null, width: 0, height: 0, capturedAt: 0, annotated: false })
+  const captureCanvasRef = useRef(null)
+  const displayCanvasRef = useRef(null)
   const [detectionsTick, setDetectionsTick] = useState(0)
+  const hasDetectionFrame = !!latestFrameRef.current?.canvas
   
   const cameras = useMemo(() => ([
     { id: 1, name: 'Camera-1', desc: 'Demo stream 1 (demo.mp4)' },
@@ -54,31 +58,19 @@ export default function Cameras() {
     }
   }, [isDetectionMode])
 
-  const drawDetections = useCallback(() => {
-    const canvas = overlayRef.current
-    const video = videoRef.current
-    if (!canvas || !video) return
-    const vw = video.videoWidth
-    const vh = video.videoHeight
-    if (!vw || !vh) return
-    const rect = video.getBoundingClientRect()
-    // Set canvas size to rendered size
-    canvas.width = rect.width
-    canvas.height = rect.height
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    const scaleX = rect.width / vw
-    const scaleY = rect.height / vh
-    const detections = latestDetectionsRef.current || []
+  const paintDetections = useCallback((ctx, detections, baseWidth, baseHeight, scaleX, scaleY) => {
+    if (!ctx || !detections?.length || !baseWidth || !baseHeight) {
+      return
+    }
     for (const det of detections) {
       const { box, class_name, confidence, recognized_name } = det || {}
       if (!box) continue
       let { x1, y1, x2, y2 } = box
-      // Defensive: ensure numbers
-      if ([x1,y1,x2,y2].some(v => typeof v !== 'number' || isNaN(v))) continue
-      // Clamp
-      x1 = Math.max(0, Math.min(vw, x1)); x2 = Math.max(0, Math.min(vw, x2));
-      y1 = Math.max(0, Math.min(vh, y1)); y2 = Math.max(0, Math.min(vh, y2));
+      if ([x1, y1, x2, y2].some(v => typeof v !== 'number' || Number.isNaN(v))) continue
+      x1 = Math.max(0, Math.min(baseWidth, x1))
+      x2 = Math.max(0, Math.min(baseWidth, x2))
+      y1 = Math.max(0, Math.min(baseHeight, y1))
+      y2 = Math.max(0, Math.min(baseHeight, y2))
       const cx1 = x1 * scaleX
       const cy1 = y1 * scaleY
       const w = (x2 - x1) * scaleX
@@ -98,6 +90,7 @@ export default function Cameras() {
       if (confidence !== undefined) labelParts.push(`${(confidence * 100).toFixed(1)}%`)
       if (recognized_name && recognized_name !== 'Unknown') labelParts.push(recognized_name)
       const label = labelParts.filter(Boolean).join(' ')
+      if (!label) continue
       ctx.font = '12px sans-serif'
       const metrics = ctx.measureText(label)
       const textWidth = metrics.width + 8
@@ -110,62 +103,98 @@ export default function Cameras() {
     }
   }, [])
 
+  const drawDetections = useCallback(() => {
+    const canvas = overlayRef.current
+    const container = canvas?.parentElement
+    const video = videoRef.current
+    if (!canvas || !container || !video) return
+    const rect = container.getBoundingClientRect()
+    // Set canvas size to rendered size
+    canvas.width = rect.width
+    canvas.height = rect.height
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    const frameInfo = latestFrameRef.current
+    const baseWidth = frameInfo?.width || video.videoWidth || 1
+    const baseHeight = frameInfo?.height || video.videoHeight || 1
+    if (isDetectionModeRef.current && frameInfo?.canvas) {
+      ctx.drawImage(frameInfo.canvas, 0, 0, rect.width, rect.height)
+    }
+    const scaleX = rect.width / baseWidth
+    const scaleY = rect.height / baseHeight
+    if (!frameInfo?.annotated) {
+      paintDetections(ctx, latestDetectionsRef.current || [], baseWidth, baseHeight, scaleX, scaleY)
+    }
+  }, [paintDetections])
+
   useEffect(() => { drawDetections() }, [detectionsTick, drawDetections])
 
   // Keep ref in sync to avoid stale closure in interval callbacks
   useEffect(() => { isDetectionModeRef.current = isDetectionMode }, [isDetectionMode])
 
+  useEffect(() => {
+    return () => {
+      if (detectLoopRef.current) {
+        cancelAnimationFrame(detectLoopRef.current)
+        detectLoopRef.current = null
+      }
+    }
+  }, [])
+
   const captureAndDetect = useCallback(async () => {
     const video = videoRef.current
-    const active = isDetectionModeRef.current
-    if (!active) return
-    if (!video) {
-      return
-    }
-    if (processingRef.current) {
-      // Optional verbose skip log (comment out if too noisy)
-      // console.log('[PPE] Skip frame: previous detection still processing')
-      return
-    }
-    if (video.readyState < 2) {
-      return
-    }
+    if (!isDetectionModeRef.current || !video) return
+    if (processingRef.current) return
+    if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) return
     processingRef.current = true
+    const startedAt = performance.now()
     try {
-      const off = document.createElement('canvas')
+      let captureCanvas = captureCanvasRef.current
+      if (!captureCanvas) {
+        captureCanvas = document.createElement('canvas')
+        captureCanvasRef.current = captureCanvas
+      }
       const vw = video.videoWidth
       const vh = video.videoHeight
-      if (!vw || !vh) {
-        return
-      }
-      off.width = vw
-      off.height = vh
-      const octx = off.getContext('2d')
-      octx.drawImage(video, 0, 0, vw, vh)
-      const dataUrl = off.toDataURL('image/jpeg', 0.6)
+      captureCanvas.width = vw
+      captureCanvas.height = vh
+      const cctx = captureCanvas.getContext('2d')
+      cctx.drawImage(video, 0, 0, vw, vh)
+      const dataUrl = captureCanvas.toDataURL('image/jpeg', 0.6)
       const payload = { frame: dataUrl, selected_rules: ['helmet', 'safety-vest', 'face'] }
-      console.log('[PPE] Frame sent')
       const resp = await api.post('/api/v1/live-camera/detect', payload)
       if (resp?.data?.detections) {
         latestDetectionsRef.current = resp.data.detections
-        // Immediate draw for responsiveness
-        drawDetections()
-        // Also bump tick in case layout changed
-        setDetectionsTick(t => t + 1)
-        console.log(`[PPE] Detection result received (n=${resp.data.detections.length})`)
       } else {
-        // No detections returned
         latestDetectionsRef.current = []
-        drawDetections()
-        console.log('[PPE] Detection result received (empty)')
       }
-    } catch (_) {
-      // ignore errors to keep smooth playback
+      let displayCanvas = displayCanvasRef.current
+      if (!displayCanvas) {
+        displayCanvas = document.createElement('canvas')
+        displayCanvasRef.current = displayCanvas
+      }
+      displayCanvas.width = vw
+      displayCanvas.height = vh
+      const dctx = displayCanvas.getContext('2d')
+      dctx.drawImage(captureCanvas, 0, 0, vw, vh)
+      paintDetections(dctx, latestDetectionsRef.current, vw, vh, 1, 1)
+      latestFrameRef.current = {
+        canvas: displayCanvas,
+        width: vw,
+        height: vh,
+        capturedAt: performance.now(),
+        latency: performance.now() - startedAt,
+        annotated: true,
+      }
+      drawDetections()
+      setDetectionsTick(t => t + 1)
+      console.log(`[PPE] Detection result (n=${latestDetectionsRef.current.length}) in ${(performance.now() - startedAt).toFixed(0)}ms`)
+    } catch (error) {
       console.log('[PPE] Detection error')
     } finally {
       processingRef.current = false
     }
-  }, [drawDetections])
+  }, [drawDetections, paintDetections])
 
   // Ensure the video element has enough data to extract frames
   const ensureVideoReady = useCallback(() => {
@@ -197,15 +226,23 @@ export default function Cameras() {
   const startDetection = async () => {
     setLoading(true)
     try {
-      try { const response = await api.post(`/api/v1/detections/run/${selected}`, {}); setDetectionStatus(response.data || {}) } catch (_) {}
-      setIsDetectionMode(true)
+  try { const response = await api.post(`/api/v1/detections/run/${selected}`, {}); setDetectionStatus(response.data || {}) } catch (_) {}
+  if (detectLoopRef.current) { cancelAnimationFrame(detectLoopRef.current); detectLoopRef.current = null }
+  setIsDetectionMode(true)
+  isDetectionModeRef.current = true
       setNonce(Date.now())
       console.log(`[PPE] Detection started (camera=${selected})`)
       // Wait until video metadata & data are ready before starting loop
       await ensureVideoReady()
-  // Defer first capture to next microtask so state commit occurs
-  setTimeout(() => { captureAndDetect() }, 10)
-  detectTimerRef.current = setInterval(() => { captureAndDetect() }, 250)
+      const loop = () => {
+        if (!isDetectionModeRef.current) return
+        captureAndDetect().finally(() => {
+          if (!isDetectionModeRef.current) return
+          detectLoopRef.current = requestAnimationFrame(loop)
+        })
+      }
+      // Kick off loop immediately
+      loop()
       await fetchViolations()
     } catch (error) {
       console.error('Failed to start detection:', error)
@@ -217,10 +254,12 @@ export default function Cameras() {
 
   const stopDetection = () => {
     setIsDetectionMode(false)
+    isDetectionModeRef.current = false
     setDetectionStatus({})
     setNonce(Date.now())
-    if (detectTimerRef.current) { clearInterval(detectTimerRef.current); detectTimerRef.current = null }
+    if (detectLoopRef.current) { cancelAnimationFrame(detectLoopRef.current); detectLoopRef.current = null }
     latestDetectionsRef.current = []
+  latestFrameRef.current = { canvas: null, width: 0, height: 0, capturedAt: 0, annotated: false }
     // Clear overlay
     const canvas = overlayRef.current
     if (canvas) {
@@ -341,19 +380,19 @@ export default function Cameras() {
               onLoadedData={() => { /* video data loaded */ }}
               onPlay={() => { /* video playing */ }}
               onEnded={(e) => { try { e.currentTarget.currentTime = 0; e.currentTarget.play() } catch (_) {} }}
-              style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block' }}
+              style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block', opacity: isDetectionMode && hasDetectionFrame ? 0 : 1, transition: 'opacity 120ms ease' }}
               className="rounded"
             />
             <canvas
               ref={overlayRef}
               className="absolute inset-0 pointer-events-none"
-              style={{ width: '100%', height: '100%', zIndex: 5 }}
+              style={{ width: '100%', height: '100%', zIndex: 5, opacity: isDetectionMode && hasDetectionFrame ? 1 : 0, transition: 'opacity 120ms ease' }}
             />
           </div>
           
           <p className="mt-2 text-xs text-gray-500">
             {isDetectionMode
-              ? 'PPE Detection active (async). Green=helmet, Yellow=vest, Blue=face. Latest frame only processed.'
+              ? 'PPE Detection active. Showing most recent AI-annotated frame (Green=helmet, Yellow=vest, Blue=face).'
               : "Looping demo video. Ensure demo files exist under /static/videos (demo.mp4, demo2.mp4, demo3.mp4)."}
           </p>
         </div>

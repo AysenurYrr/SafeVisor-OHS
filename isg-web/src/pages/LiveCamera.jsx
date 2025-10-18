@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { api } from '../services/api'
 import Icon from '../components/Icon'
 import Button from '../components/Button'
@@ -28,13 +28,18 @@ export default function LiveCamera() {
   const lastSummaryRef = useRef(0)
   
   const videoRef = useRef(null)
-  const overlayCanvasRef = useRef(null) // Visible overlay for bounding boxes (does NOT replace video)
+  const overlayCanvasRef = useRef(null) // Visible canvas that renders the annotated frame
   const offscreenCanvasRef = useRef(null) // Offscreen canvas for frame capture only
+  const annotateCanvasRef = useRef(null) // Offscreen canvas for annotated frames
+  const latestFrameRef = useRef({ canvas: null, width: 0, height: 0, annotated: false })
+  const latestDetectionsRef = useRef([])
   const streamRef = useRef(null)
   const detectionIntervalRef = useRef(null)
   const isDetectionInProgressRef = useRef(false)
   const shouldContinueDetectionRef = useRef(false)
   const isDetectingRef = useRef(false)
+  const [drawTick, setDrawTick] = useState(0)
+  const hasAnnotatedFrame = !!latestFrameRef.current?.canvas
 
   // Initialize webcam
   useEffect(() => {
@@ -98,73 +103,120 @@ export default function LiveCamera() {
     offscreen.height = video.videoHeight
     const ctx = offscreen.getContext('2d')
     ctx.drawImage(video, 0, 0, offscreen.width, offscreen.height)
-    return offscreen.toDataURL('image/jpeg', 0.7) // Slightly lower quality for speed
+    return {
+      dataUrl: offscreen.toDataURL('image/jpeg', 0.7),
+      width: offscreen.width,
+      height: offscreen.height,
+      canvas: offscreen,
+    }
   }
 
-  const drawOverlay = (detectionResults) => {
+  const paintDetections = useCallback((ctx, detectionResults, baseWidth, baseHeight, scaleX = 1, scaleY = 1) => {
+    if (!ctx || !detectionResults?.length || !baseWidth || !baseHeight) {
+      return
+    }
+
+    detectionResults.forEach(det => {
+      const { box, class_name, confidence, recognized_name, employee_id, recognition_confidence, recognition_distance, recognition_status, recognition_threshold } = det || {}
+      if (!box) return
+      let { x1, y1, x2, y2 } = box
+      if ([x1, y1, x2, y2].some(v => typeof v !== 'number' || Number.isNaN(v))) return
+      x1 = Math.max(0, Math.min(baseWidth, x1))
+      x2 = Math.max(0, Math.min(baseWidth, x2))
+      y1 = Math.max(0, Math.min(baseHeight, y1))
+      y2 = Math.max(0, Math.min(baseHeight, y2))
+      const cx1 = x1 * scaleX
+      const cy1 = y1 * scaleY
+      const w = (x2 - x1) * scaleX
+      const h = (y2 - y1) * scaleY
+      if (w <= 2 || h <= 2) return
+
+      const colors = {
+        helmet: '#22c55e',
+        'safety-vest': '#eab308',
+        gloves: '#3b82f6',
+        glasses: '#8b5cf6',
+        'face-mask': '#ec4899',
+        face: '#10b981',
+      }
+      const normalizedClass = (class_name || '').toLowerCase()
+      const color = colors[normalizedClass] || '#f59e0b'
+
+      ctx.strokeStyle = color
+      ctx.lineWidth = 3
+      ctx.strokeRect(cx1, cy1, w, h)
+
+      let label
+      if (normalizedClass === 'face' && recognized_name) {
+        if (recognized_name !== 'Unknown') {
+          const pct = recognition_confidence != null ? Math.round(recognition_confidence * 100) : null
+          const distFrag = debugMode && recognition_distance != null ? ` d=${recognition_distance.toFixed(3)}` : ''
+          label = `${recognized_name}${employee_id ? ` (${employee_id})` : ''}${pct != null ? ` ${pct}%` : ''}${distFrag}`.trim()
+        } else {
+          if (debugMode) {
+            const distFrag = recognition_distance != null ? `d=${recognition_distance.toFixed(3)}` : ''
+            const thrFrag = recognition_threshold != null ? ` thr=${recognition_threshold}` : ''
+            const stFrag = recognition_status ? ` ${recognition_status}` : ''
+            label = `Unknown ${distFrag}${thrFrag}${stFrag}`.trim()
+          } else {
+            label = 'Unknown'
+          }
+        }
+      } else if (class_name) {
+        label = `${class_name} ${confidence != null ? `${Math.round(confidence * 100)}%` : ''}`.trim()
+      }
+
+      if (!label) {
+        return
+      }
+
+      ctx.font = 'bold 14px sans-serif'
+      const metrics = ctx.measureText(label)
+      const textHeight = 18
+      ctx.fillStyle = color
+      const rectY = Math.max(0, cy1 - textHeight - 6)
+      ctx.fillRect(cx1, rectY, metrics.width + 12, textHeight + 6)
+      ctx.fillStyle = '#fff'
+      ctx.fillText(label, cx1 + 6, rectY + textHeight - 4)
+    })
+  }, [debugMode])
+
+  const drawOverlay = useCallback(() => {
     const canvas = overlayCanvasRef.current
     const video = videoRef.current
-    if (!canvas || !video) return
-    if (video.videoWidth === 0) return
+    const container = canvas?.parentElement
+    if (!canvas || !video || !container) return
 
-    // Match canvas size to video (only when changed to avoid layout churn)
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
+    const rect = container.getBoundingClientRect()
+    const outputW = Math.max(1, Math.round(rect.width || video.clientWidth || latestFrameRef.current.width || 0))
+    const outputH = Math.max(1, Math.round(rect.height || video.clientHeight || latestFrameRef.current.height || 0))
+    if (!outputW || !outputH) return
+
+    if (canvas.width !== outputW || canvas.height !== outputH) {
+      canvas.width = outputW
+      canvas.height = outputH
     }
 
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    detectionResults.forEach(det => {
-      const { box, class_name, confidence, recognized_name, employee_id, recognition_confidence, recognition_distance, recognition_status, recognition_threshold } = det
-      if (!box) return
-      const { x1, y1, x2, y2 } = box
-      const colors = {
-        'helmet': '#22c55e',
-        'safety-vest': '#eab308',
-        'gloves': '#3b82f6',
-        'glasses': '#8b5cf6',
-        'face-mask': '#ec4899',
-        'face': '#10b981'  // Green for face detections
-      }
-      const color = colors[class_name?.toLowerCase()] || '#f59e0b'
+    const frame = latestFrameRef.current
+    if (!frame?.canvas) {
+      return
+    }
 
-      ctx.strokeStyle = color
-      ctx.lineWidth = 3
-      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
+    ctx.drawImage(frame.canvas, 0, 0, frame.width, frame.height, 0, 0, canvas.width, canvas.height)
 
-      // For face detections, show employee name if recognized
-      let label
-      if (class_name?.toLowerCase() === 'face' && recognized_name) {
-        if (recognized_name !== 'Unknown') {
-          const pct = recognition_confidence != null ? (recognition_confidence * 100).toFixed(0) : ''
-          const distFrag = debugMode && recognition_distance != null ? ` d=${recognition_distance.toFixed(3)}` : ''
-          label = `${recognized_name}${employee_id ? ' (' + employee_id + ')' : ''}${pct ? ' ' + pct + '%' : ''}${distFrag}`
-        } else {
-          if (debugMode) {
-            const distFrag = recognition_distance != null ? `d=${recognition_distance?.toFixed(3)}` : ''
-            const thrFrag = recognition_threshold != null ? `thr=${recognition_threshold}` : ''
-            const stFrag = recognition_status ? recognition_status : ''
-            label = `Unknown ${distFrag} ${thrFrag} ${stFrag}`.trim()
-          } else {
-            label = 'Unknown'
-          }
-        }
-      } else {
-        label = `${class_name} ${(confidence * 100).toFixed(0)}%`
-      }
-      
-      ctx.font = 'bold 14px sans-serif'
-      const metrics = ctx.measureText(label)
-      const textHeight = 18
-      ctx.fillStyle = color
-      const rectY = Math.max(0, y1 - textHeight - 6)
-      ctx.fillRect(x1, rectY, metrics.width + 12, textHeight + 6)
-      ctx.fillStyle = '#fff'
-      ctx.fillText(label, x1 + 6, rectY + textHeight - 4)
-    })
-  }
+    if (!frame.annotated) {
+      const scaleX = canvas.width / frame.width
+      const scaleY = canvas.height / frame.height
+      paintDetections(ctx, latestDetectionsRef.current, frame.width, frame.height, scaleX, scaleY)
+    }
+  }, [paintDetections])
+
+  useEffect(() => {
+    drawOverlay()
+  }, [drawTick, drawOverlay])
 
   const performDetection = async () => {
     // Skip if detection is already in progress
@@ -175,19 +227,21 @@ export default function LiveCamera() {
     try {
       isDetectionInProgressRef.current = true
       
-      const frameData = captureFrame()
-      if (!frameData) {
+      const capturedFrame = captureFrame()
+      if (!capturedFrame) {
         isDetectionInProgressRef.current = false
         return
       }
 
+      const { dataUrl, canvas: rawCanvas, width: frameWidth, height: frameHeight } = capturedFrame
       const response = await api.post('/api/v1/live-camera/detect', {
-        frame: frameData,
+        frame: dataUrl,
         selected_rules: selectedRules
       })
 
       if (response.data.success && isDetectingRef.current) {
         const detectionResults = response.data.detections || []
+        latestDetectionsRef.current = detectionResults
         
         if (debugMode) {
           const now = performance.now()
@@ -219,9 +273,24 @@ export default function LiveCamera() {
           byType
         })
 
-        // Draw detections on overlay (non-blocking video) only if still detecting
-        if (isDetectingRef.current) {
-          drawOverlay(detectionResults)
+        if (isDetectingRef.current && rawCanvas) {
+          let annotateCanvas = annotateCanvasRef.current
+          if (!annotateCanvas) {
+            annotateCanvas = document.createElement('canvas')
+            annotateCanvasRef.current = annotateCanvas
+          }
+          annotateCanvas.width = frameWidth
+          annotateCanvas.height = frameHeight
+          const actx = annotateCanvas.getContext('2d')
+          actx.drawImage(rawCanvas, 0, 0, frameWidth, frameHeight)
+          paintDetections(actx, detectionResults, frameWidth, frameHeight, 1, 1)
+          latestFrameRef.current = {
+            canvas: annotateCanvas,
+            width: frameWidth,
+            height: frameHeight,
+            annotated: true,
+          }
+          setDrawTick(t => t + 1)
         }
       } else if (!response.data.success) {
         console.error('[LiveCamera][Error] Invalid response:', response.data)
@@ -250,6 +319,9 @@ export default function LiveCamera() {
     setIsDetecting(true)
     isDetectingRef.current = true
     shouldContinueDetectionRef.current = true
+    latestFrameRef.current = { canvas: null, width: 0, height: 0, annotated: false }
+    latestDetectionsRef.current = []
+    setDrawTick(t => t + 1)
     
     // Start the detection loop (will self-schedule after each completion)
     performDetection()
@@ -272,6 +344,9 @@ export default function LiveCamera() {
       ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height)
     }
 
+    latestFrameRef.current = { canvas: null, width: 0, height: 0, annotated: false }
+    latestDetectionsRef.current = []
+    setDrawTick(t => t + 1)
     setDetections([])
     setStats({ total: 0, byType: {} })
     console.log('[LiveCamera] Detection stopped, overlays cleared')
@@ -330,12 +405,13 @@ export default function LiveCamera() {
                     playsInline
                     muted
                     className="w-full h-auto block"
+                    style={{ opacity: isDetecting && hasAnnotatedFrame ? 0 : 1, transition: 'opacity 120ms linear' }}
                   />
                   {/* Overlay canvas: same intrinsic size as video, scaled by CSS */}
                   <canvas
                     ref={overlayCanvasRef}
                     className="absolute inset-0 w-full h-full"
-                    style={{ pointerEvents: 'none', opacity: isDetecting ? 1 : 0, transition: 'opacity 120ms linear' }}
+                    style={{ pointerEvents: 'none', opacity: isDetecting && hasAnnotatedFrame ? 1 : 0, transition: 'opacity 120ms linear' }}
                   />
                 </div>
               )}
