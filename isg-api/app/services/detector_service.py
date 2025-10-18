@@ -166,8 +166,53 @@ class PPEDetectorService:
             
             if required_ppe:
                 self._violation_managers[camera_id].set_required_ppe(required_ppe)
+        else:
+            # Update required PPE if provided and different
+            if required_ppe:
+                self._violation_managers[camera_id].set_required_ppe(required_ppe)
         
         return self._violation_managers[camera_id]
+    
+    def load_factory_area_rules(self, db_session, camera_id: int) -> Tuple[str, str, List[str]]:
+        """
+        Load factory area name, camera name, and safety rules for a camera.
+        
+        Args:
+            db_session: Database session
+            camera_id: Camera ID
+        
+        Returns:
+            Tuple of (factory_area_name, camera_name, required_ppe_list)
+        """
+        try:
+            from app.models.camera import Camera
+            from app.crud.factory_area import get_area_safety_rules
+            
+            # Get camera
+            camera = db_session.query(Camera).filter(Camera.id == camera_id).first()
+            
+            if not camera:
+                logger.warning(f"Camera {camera_id} not found")
+                return ("Unknown Area", "Unknown Camera", [])
+            
+            camera_name = camera.name
+            
+            # Get factory area
+            if camera.factory_area_id:
+                factory_area = camera.factory_area
+                factory_area_name = factory_area.name if factory_area else "Unknown Area"
+                
+                # Get safety rules
+                required_ppe = get_area_safety_rules(db_session, camera.factory_area_id)
+            else:
+                factory_area_name = "No Area"
+                required_ppe = []
+            
+            return (factory_area_name, camera_name, required_ppe)
+            
+        except Exception as e:
+            logger.error(f"Error loading factory area rules: {e}")
+            return ("Unknown Area", "Unknown Camera", [])
     
     def detect_ppe(self, frame) -> List[Dict[str, Any]]:
         """
