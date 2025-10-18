@@ -84,10 +84,14 @@ def create_factory_area(
     db.add(db_area)
     db.flush()  # Get the ID without committing
     
-    # Add cameras
+    # Link cameras to this area (one-to-many)
     if area.camera_ids:
         cameras = db.query(Camera).filter(Camera.id.in_(area.camera_ids)).all()
-        db_area.cameras = cameras
+        for camera in cameras:
+            # Check if camera is already linked to another area
+            if camera.factory_area_id is not None and camera.factory_area_id != db_area.id:
+                raise ValueError(f"Camera '{camera.name}' is already linked to another factory area")
+            camera.factory_area_id = db_area.id
     
     # Add safety rules
     if area.safety_rules:
@@ -118,10 +122,21 @@ def update_factory_area(
     for field, value in update_data.items():
         setattr(db_area, field, value)
     
-    # Update cameras if provided
+    # Update cameras if provided (one-to-many)
     if area_update.camera_ids is not None:
-        cameras = db.query(Camera).filter(Camera.id.in_(area_update.camera_ids)).all()
-        db_area.cameras = cameras
+        # First, unlink all current cameras
+        current_cameras = db.query(Camera).filter(Camera.factory_area_id == area_id).all()
+        for camera in current_cameras:
+            camera.factory_area_id = None
+        
+        # Then link new cameras
+        if area_update.camera_ids:
+            cameras = db.query(Camera).filter(Camera.id.in_(area_update.camera_ids)).all()
+            for camera in cameras:
+                # Check if camera is already linked to another area
+                if camera.factory_area_id is not None and camera.factory_area_id != area_id:
+                    raise ValueError(f"Camera '{camera.name}' is already linked to another factory area")
+                camera.factory_area_id = area_id
     
     # Update safety rules if provided
     if area_update.safety_rules is not None:

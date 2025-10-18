@@ -59,6 +59,7 @@ class CameraUpdate(BaseModel):
 
 class CameraInDB(CameraBase):
     id: int
+    factory_area_id: Optional[int] = None
     last_seen: Optional[datetime] = None
     created_by: int
     created_at: datetime
@@ -70,6 +71,7 @@ class CameraInDB(CameraBase):
 
 class CameraResponse(CameraBase):
     id: int
+    factory_area_id: Optional[int] = None
     last_seen: Optional[datetime] = None
     created_by: int
     created_at: datetime

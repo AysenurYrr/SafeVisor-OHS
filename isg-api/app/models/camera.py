@@ -26,6 +26,7 @@ class Camera(Base):
     face_recognition = Column(Boolean, default=True)
     description = Column(Text, nullable=True)
     last_seen = Column(DateTime(timezone=True), nullable=True)
+    factory_area_id = Column(Integer, ForeignKey("factory_areas.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -35,4 +36,4 @@ class Camera(Base):
     detections = relationship("Detection", back_populates="camera", lazy="select")
     violations = relationship("Violation", back_populates="camera", lazy="select")
     pose_alerts = relationship("PoseAlert", back_populates="camera", lazy="select")
-    factory_areas = relationship("FactoryArea", secondary="area_cameras", back_populates="cameras", lazy="select")
+    factory_area = relationship("FactoryArea", back_populates="cameras", lazy="select")

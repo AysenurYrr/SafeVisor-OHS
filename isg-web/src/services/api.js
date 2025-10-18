@@ -423,6 +423,21 @@ export const FactoryAreasAPI = {
   async getSafetyRules() {
     const response = await api.get('/api/v1/factory-areas/safety-rules')
     return response.data
+  },
+
+  async linkCamera(areaId, cameraId) {
+    const response = await api.post(`/api/v1/factory-areas/${areaId}/cameras/${cameraId}/link`)
+    return response.data
+  },
+
+  async unlinkCamera(areaId, cameraId) {
+    const response = await api.delete(`/api/v1/factory-areas/${areaId}/cameras/${cameraId}/unlink`)
+    return response.data
+  },
+
+  async getAvailableCameras(areaId) {
+    const response = await api.get(`/api/v1/factory-areas/${areaId}/available-cameras`)
+    return response.data
   }
 }
 
