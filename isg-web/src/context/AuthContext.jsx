@@ -5,24 +5,13 @@ import { AuthAPI } from '../services/api'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('token'))
-  const [refreshToken, setRefreshToken] = useState(() => localStorage.getItem('refreshToken'))
+  // Remove token storage from state - will use HttpOnly cookies instead
   const [user, setUser] = useState(() => {
     const raw = localStorage.getItem('user')
     return raw ? JSON.parse(raw) : null
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-
-  useEffect(() => {
-    if (token) localStorage.setItem('token', token)
-    else localStorage.removeItem('token')
-  }, [token])
-
-  useEffect(() => {
-    if (refreshToken) localStorage.setItem('refreshToken', refreshToken)
-    else localStorage.removeItem('refreshToken')
-  }, [refreshToken])
 
   useEffect(() => {
     if (user) localStorage.setItem('user', JSON.stringify(user))
@@ -32,16 +21,15 @@ export function AuthProvider({ children }) {
   // Check if user is still authenticated on app load
   useEffect(() => {
     const initAuth = async () => {
-      if (token && !user) {
+      // Try to get current user if we have a session cookie
+      if (!user) {
         try {
           setLoading(true)
           const userData = await AuthAPI.getCurrentUser()
           setUser(userData)
         } catch (error) {
-          console.error('Failed to get current user:', error)
-          // Clear invalid token
-          setToken(null)
-          setRefreshToken(null)
+          // No valid session, that's okay
+          console.debug('No active session found')
         } finally {
           setLoading(false)
         }
@@ -49,27 +37,21 @@ export function AuthProvider({ children }) {
     }
 
     initAuth()
-  }, [token, user])
+  }, [])
 
   const login = async ({ email, password }) => {
     try {
       setLoading(true)
       setError(null)
       
-      // Call the real ISG API login endpoint
+      // Call the ISG API login endpoint - tokens are set in HttpOnly cookies
       const response = await AuthAPI.login(email, password)
       
-      // Store tokens immediately so interceptors pick them up for the next request
-      if (response?.access_token) localStorage.setItem('token', response.access_token)
-      if (response?.refresh_token) localStorage.setItem('refreshToken', response.refresh_token)
-      setToken(response.access_token)
-      setRefreshToken(response.refresh_token)
-      
-      // Get user info
+      // Get user info - the access token cookie is automatically sent
       const userData = await AuthAPI.getCurrentUser()
       setUser(userData)
       
-      return { token: response.access_token, user: userData }
+      return { user: userData }
     } catch (error) {
       console.error('Login failed:', error)
       setError(error.response?.data?.detail || 'Login failed')
@@ -81,16 +63,14 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
-      if (token) {
-        await AuthAPI.logout()
-      }
+      await AuthAPI.logout()
     } catch (error) {
       console.error('Logout error:', error)
     } finally {
-      setToken(null)
-      setRefreshToken(null)
       setUser(null)
       setError(null)
+      // Clean up any remaining localStorage items
+      localStorage.removeItem('user')
     }
   }
 
@@ -126,8 +106,6 @@ export function AuthProvider({ children }) {
   const clearError = () => setError(null)
 
   const value = useMemo(() => ({ 
-    token, 
-    refreshToken,
     user, 
     loading,
     error,
@@ -135,8 +113,8 @@ export function AuthProvider({ children }) {
     logout, 
     hasRole,
     clearError,
-    isAuthenticated: !!token && !!user
-  }), [token, refreshToken, user, loading, error])
+    isAuthenticated: !!user
+  }), [user, loading, error])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
