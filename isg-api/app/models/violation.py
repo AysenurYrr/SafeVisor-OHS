@@ -43,6 +43,16 @@ class Violation(Base):
     video_url = Column(String(500), nullable=True)
     confidence_score = Column(Integer, nullable=False, default=0)  # 0-100
     bbox_coordinates = Column(Text, nullable=True)  # JSON string
+    
+    # Evidence images (start, middle, end frames)
+    evidence_start_image = Column(String(500), nullable=True)
+    evidence_middle_image = Column(String(500), nullable=True)
+    evidence_end_image = Column(String(500), nullable=True)
+    
+    # Additional tracking fields
+    person_tracker_id = Column(Integer, nullable=True)  # Temporal tracker ID
+    duration_frames = Column(Integer, nullable=True)  # How many frames violation lasted
+    
     acknowledged_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     resolved_by = Column(Integer, ForeignKey("users.id"), nullable=True)

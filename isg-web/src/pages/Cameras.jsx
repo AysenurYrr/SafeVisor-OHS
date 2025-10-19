@@ -9,6 +9,8 @@ export default function Cameras() {
   const navigate = useNavigate()
   const [selected, setSelected] = useState(1)
   const [violations, setViolations] = useState([])
+  const [liveViolations, setLiveViolations] = useState([]) // New: Real-time violations from tracking
+  const [trackedPersons, setTrackedPersons] = useState([]) // New: Tracked persons with stable IDs
   const videoRef = useRef(null)
   const overlayRef = useRef(null)
   const detectLoopRef = useRef(null)
@@ -19,6 +21,7 @@ export default function Cameras() {
   const displayCanvasRef = useRef(null)
   const [detectionsTick, setDetectionsTick] = useState(0)
   const hasDetectionFrame = !!latestFrameRef.current?.canvas
+  const frameCountRef = useRef(0) // New: Frame counter for temporal tracking
   
   // Factory area information (fetched based on camera's factory_area_id)
   const [factoryAreaInfo, setFactoryAreaInfo] = useState(null)
@@ -105,48 +108,123 @@ export default function Cameras() {
     return () => clearInterval(timer) // Cleanup on unmount or when `selected` changes
   }, [selected])
 
-  const paintDetections = useCallback((ctx, detections, baseWidth, baseHeight, scaleX, scaleY) => {
-    if (!ctx || !detections?.length || !baseWidth || !baseHeight) {
+  const paintDetections = useCallback((ctx, detections, trackedPersons, baseWidth, baseHeight, scaleX, scaleY) => {
+    if (!ctx || !baseWidth || !baseHeight) {
       return
     }
-    for (const det of detections) {
-      const { box, class_name, confidence, recognized_name } = det || {}
-      if (!box) continue
-      let { x1, y1, x2, y2 } = box
-      if ([x1, y1, x2, y2].some(v => typeof v !== 'number' || Number.isNaN(v))) continue
-      x1 = Math.max(0, Math.min(baseWidth, x1))
-      x2 = Math.max(0, Math.min(baseWidth, x2))
-      y1 = Math.max(0, Math.min(baseHeight, y1))
-      y2 = Math.max(0, Math.min(baseHeight, y2))
-      const cx1 = x1 * scaleX
-      const cy1 = y1 * scaleY
-      const w = (x2 - x1) * scaleX
-      const h = (y2 - y1) * scaleY
-      if (w <= 2 || h <= 2) continue
-      let color = '#ffffff'
-      const cls = (class_name || '').toLowerCase()
-      if (cls.includes('helmet')) color = '#16a34a'
-      else if (cls.includes('vest')) color = '#eab308'
-      else if (cls.includes('face')) color = '#3b82f6'
-      else if (cls.includes('glove')) color = '#f97316'
-      else if (cls.includes('mask')) color = '#9333ea'
-      ctx.strokeStyle = color
-      ctx.lineWidth = 2
-      ctx.strokeRect(cx1, cy1, w, h)
-      const labelParts = [class_name]
-      if (confidence !== undefined) labelParts.push(`${(confidence * 100).toFixed(1)}%`)
-      if (recognized_name && recognized_name !== 'Unknown') labelParts.push(recognized_name)
-      const label = labelParts.filter(Boolean).join(' ')
-      if (!label) continue
-      ctx.font = '12px sans-serif'
-      const metrics = ctx.measureText(label)
-      const textWidth = metrics.width + 8
-      const textHeight = 16
-      const labelY = cy1 - textHeight - 2 < 0 ? cy1 + textHeight : cy1 - 2
-      ctx.fillStyle = color
-      ctx.fillRect(cx1, labelY - textHeight, textWidth, textHeight)
-      ctx.fillStyle = '#000'
-      ctx.fillText(label, cx1 + 4, labelY - 4)
+    
+    // Draw tracked persons first (with stable IDs)
+    if (trackedPersons && trackedPersons.length > 0) {
+      for (const person of trackedPersons) {
+        const { box, person_id, recognized_name, ppe_status } = person || {}
+        if (!box) continue
+        
+        let { x1, y1, x2, y2 } = box
+        if ([x1, y1, x2, y2].some(v => typeof v !== 'number' || Number.isNaN(v))) continue
+        
+        x1 = Math.max(0, Math.min(baseWidth, x1))
+        x2 = Math.max(0, Math.min(baseWidth, x2))
+        y1 = Math.max(0, Math.min(baseHeight, y1))
+        y2 = Math.max(0, Math.min(baseHeight, y2))
+        
+        const cx1 = x1 * scaleX
+        const cy1 = y1 * scaleY
+        const w = (x2 - x1) * scaleX
+        const h = (y2 - y1) * scaleY
+        
+        if (w <= 2 || h <= 2) continue
+        
+        // Color based on PPE compliance
+        const hasAllPPE = ppe_status && Object.values(ppe_status).every(v => v === true)
+        const color = hasAllPPE ? '#16a34a' : '#ef4444' // green if compliant, red if violation
+        
+        ctx.strokeStyle = color
+        ctx.lineWidth = 3
+        ctx.strokeRect(cx1, cy1, w, h)
+        
+        // Draw person label
+        const label = recognized_name || `Person ${person_id}`
+        ctx.font = 'bold 14px sans-serif'
+        const metrics = ctx.measureText(label)
+        const textWidth = metrics.width + 8
+        const textHeight = 18
+        const labelY = cy1 - textHeight - 2 < 0 ? cy1 + textHeight : cy1 - 2
+        
+        ctx.fillStyle = color
+        ctx.fillRect(cx1, labelY - textHeight, textWidth, textHeight)
+        ctx.fillStyle = '#fff'
+        ctx.fillText(label, cx1 + 4, labelY - 4)
+        
+        // Draw PPE status indicators
+        if (ppe_status) {
+          let yOffset = labelY - textHeight - 2
+          for (const [ppe_type, has_ppe] of Object.entries(ppe_status)) {
+            const statusColor = has_ppe ? '#16a34a' : '#ef4444'
+            const statusText = `${ppe_type}: ${has_ppe ? '✓' : '✗'}`
+            
+            ctx.font = '11px sans-serif'
+            const statusMetrics = ctx.measureText(statusText)
+            const statusWidth = statusMetrics.width + 6
+            const statusHeight = 14
+            
+            ctx.fillStyle = statusColor
+            ctx.fillRect(cx1, yOffset - statusHeight, statusWidth, statusHeight)
+            ctx.fillStyle = '#fff'
+            ctx.fillText(statusText, cx1 + 3, yOffset - 3)
+            
+            yOffset -= statusHeight + 2
+          }
+        }
+      }
+    }
+    
+    // Draw other detections (PPE equipment)
+    if (detections && detections.length > 0) {
+      for (const det of detections) {
+        const { box, class_name, confidence } = det || {}
+        if (!box) continue
+        
+        // Skip person/face detections (already drawn above)
+        const cls = (class_name || '').toLowerCase()
+        if (cls === 'person' || cls === 'face') continue
+        
+        let { x1, y1, x2, y2 } = box
+        if ([x1, y1, x2, y2].some(v => typeof v !== 'number' || Number.isNaN(v))) continue
+        
+        x1 = Math.max(0, Math.min(baseWidth, x1))
+        x2 = Math.max(0, Math.min(baseWidth, x2))
+        y1 = Math.max(0, Math.min(baseHeight, y1))
+        y2 = Math.max(0, Math.min(baseHeight, y2))
+        
+        const cx1 = x1 * scaleX
+        const cy1 = y1 * scaleY
+        const w = (x2 - x1) * scaleX
+        const h = (y2 - y1) * scaleY
+        
+        if (w <= 2 || h <= 2) continue
+        
+        let color = '#ffffff'
+        if (cls.includes('helmet')) color = '#16a34a'
+        else if (cls.includes('vest')) color = '#eab308'
+        else if (cls.includes('glove')) color = '#f97316'
+        else if (cls.includes('mask')) color = '#9333ea'
+        
+        ctx.strokeStyle = color
+        ctx.lineWidth = 2
+        ctx.strokeRect(cx1, cy1, w, h)
+        
+        const label = `${class_name} ${(confidence * 100).toFixed(0)}%`
+        ctx.font = '11px sans-serif'
+        const metrics = ctx.measureText(label)
+        const textWidth = metrics.width + 6
+        const textHeight = 14
+        const labelY = cy1 - textHeight - 2 < 0 ? cy1 + textHeight : cy1 - 2
+        
+        ctx.fillStyle = color
+        ctx.fillRect(cx1, labelY - textHeight, textWidth, textHeight)
+        ctx.fillStyle = '#000'
+        ctx.fillText(label, cx1 + 3, labelY - 3)
+      }
     }
   }, [])
 
@@ -170,9 +248,9 @@ export default function Cameras() {
     const scaleX = rect.width / baseWidth
     const scaleY = rect.height / baseHeight
     if (!frameInfo?.annotated) {
-      paintDetections(ctx, latestDetectionsRef.current || [], baseWidth, baseHeight, scaleX, scaleY)
+      paintDetections(ctx, latestDetectionsRef.current || [], trackedPersons, baseWidth, baseHeight, scaleX, scaleY)
     }
-  }, [paintDetections])
+  }, [paintDetections, trackedPersons])
 
   useEffect(() => { 
     if(hasDetectionFrame) {
@@ -208,6 +286,8 @@ export default function Cameras() {
     if (!video || processingRef.current || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return
     
     processingRef.current = true
+    frameCountRef.current += 1
+    
     try {
       let canvas = captureCanvasRef.current
       if (!canvas) {
@@ -221,10 +301,26 @@ export default function Cameras() {
       const ctx = canvas.getContext('2d')
       ctx.drawImage(video, 0, 0, vw, vh)
       const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
-      const payload = { frame: dataUrl, selected_rules: ['helmet', 'safety-vest', 'face'] }
-      const resp = await api.post('/api/v1/live-camera/detect', payload)
       
+      // Use new endpoint with temporal tracking
+      const payload = { 
+        frame: dataUrl,
+        frame_num: frameCountRef.current
+      }
+      const resp = await api.post(`/api/v1/cameras/${selected}/detect-with-tracking`, payload)
+      
+      // Update detections and tracked persons
       latestDetectionsRef.current = resp?.data?.detections || []
+      setTrackedPersons(resp?.data?.tracked_persons || [])
+      
+      // Update live violations if any new ones are reported
+      if (resp?.data?.violations && resp.data.violations.length > 0) {
+        setLiveViolations(prev => {
+          const newViolations = [...resp.data.violations, ...prev]
+          // Keep only last 20 violations
+          return newViolations.slice(0, 20)
+        })
+      }
       
       let displayCanvas = displayCanvasRef.current
       if (!displayCanvas) {
@@ -235,7 +331,7 @@ export default function Cameras() {
       displayCanvas.height = vh
       const dctx = displayCanvas.getContext('2d')
       dctx.drawImage(canvas, 0, 0, vw, vh)
-      paintDetections(dctx, latestDetectionsRef.current, vw, vh, 1, 1)
+      paintDetections(dctx, latestDetectionsRef.current, resp?.data?.tracked_persons || [], vw, vh, 1, 1)
       
       latestFrameRef.current = {
         canvas: displayCanvas,
@@ -250,7 +346,7 @@ export default function Cameras() {
     } finally {
       processingRef.current = false
     }
-  }, [paintDetections])
+  }, [paintDetections, selected])
 
   // This effect handles the entire detection lifecycle.
   useEffect(() => {
@@ -290,6 +386,9 @@ export default function Cameras() {
       // Clear canvas and reset state when camera changes
       latestDetectionsRef.current = []
       latestFrameRef.current = { canvas: null, width: 0, height: 0, capturedAt: 0, annotated: false }
+      frameCountRef.current = 0 // Reset frame counter
+      setTrackedPersons([]) // Clear tracked persons
+      setLiveViolations([]) // Clear live violations
       const canvas = overlayRef.current
       if (canvas) {
         const ctx = canvas.getContext('2d')
@@ -404,15 +503,108 @@ export default function Cameras() {
           </div>
           
           <p className="mt-2 text-xs text-gray-500">
-            Real-time detection is active. Showing most recent AI-annotated frame (Green=helmet, Yellow=vest, Blue=face).
+            Smart temporal tracking active: Persons tracked with stable IDs, PPE status stabilized (2-frame grace), violations confirmed after 5+ consecutive frames.
           </p>
         </div>
       </div>
 
-      {/* Violations Table */}
+      {/* Live Violations Display - Real-time from Temporal Tracking */}
+      {liveViolations.length > 0 && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">🚨 Live Violation Alerts (Smart Tracking)</h2>
+            <span className="px-2 py-1 rounded text-xs bg-red-100 text-red-800 font-medium">
+              {liveViolations.length} Active Alert{liveViolations.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mb-4">
+            These violations were detected with temporal tracking (5+ consecutive frames) to avoid false positives.
+          </p>
+          <div className="space-y-3">
+            {liveViolations.map((violation, idx) => (
+              <div key={idx} className="border border-red-200 rounded-lg p-4 bg-red-50">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`px-3 py-1 inline-flex text-sm font-semibold rounded-full ${getViolationBadgeColor(violation.violation_type)}`}>
+                        {violation.violation_type?.replace(/_/g, ' ').toUpperCase()}
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        {violation.employee_name || 'Unknown Employee'}
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-700 mb-2">
+                      <div>
+                        <span className="font-medium">Factory Area:</span> {violation.factory_area || 'N/A'}
+                      </div>
+                      <div>
+                        <span className="font-medium">Camera:</span> {violation.camera_name || `Camera ${selected}`}
+                      </div>
+                      <div>
+                        <span className="font-medium">Duration:</span> {violation.duration_frames || 'N/A'} frames
+                      </div>
+                      <div>
+                        <span className="font-medium">Confidence:</span> {violation.confidence_score || 0}%
+                      </div>
+                      <div className="col-span-2">
+                        <span className="font-medium">Time:</span> {new Date(violation.timestamp).toLocaleString()}
+                      </div>
+                    </div>
+                    
+                    {/* Evidence Images */}
+                    {violation.evidence_images && Object.keys(violation.evidence_images).length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-gray-700 mb-2">Evidence Frames:</p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {violation.evidence_images.start && (
+                            <div>
+                              <img 
+                                src={violation.evidence_images.start} 
+                                alt="Start frame" 
+                                className="w-full h-20 object-cover rounded border border-gray-300"
+                                onError={(e) => { e.target.style.display = 'none' }}
+                              />
+                              <p className="text-xs text-center text-gray-500 mt-1">Start</p>
+                            </div>
+                          )}
+                          {violation.evidence_images.middle && (
+                            <div>
+                              <img 
+                                src={violation.evidence_images.middle} 
+                                alt="Middle frame" 
+                                className="w-full h-20 object-cover rounded border border-gray-300"
+                                onError={(e) => { e.target.style.display = 'none' }}
+                              />
+                              <p className="text-xs text-center text-gray-500 mt-1">Middle</p>
+                            </div>
+                          )}
+                          {violation.evidence_images.end && (
+                            <div>
+                              <img 
+                                src={violation.evidence_images.end} 
+                                alt="End frame" 
+                                className="w-full h-20 object-cover rounded border border-gray-300"
+                                onError={(e) => { e.target.style.display = 'none' }}
+                              />
+                              <p className="text-xs text-center text-gray-500 mt-1">End</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Historical Violations Table */}
       {violations.length > 0 && (
         <div className="card p-4">
-          <h2 className="text-lg font-semibold mb-3">Recent PPE Violations</h2>
+          <h2 className="text-lg font-semibold mb-3">Historical PPE Violations</h2>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">

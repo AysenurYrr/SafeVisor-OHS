@@ -490,3 +490,192 @@ def camera_heartbeat(
     return {"message": "Camera heartbeat updated"}
 
 
+@router.post("/{camera_id}/detect-with-tracking")
+async def detect_with_tracking(
+    camera_id: int,
+    request: dict,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> dict:
+    """
+    Detect PPE with temporal tracking for a camera feed.
+    Uses smart tracking to stabilize recognition and violations.
+    
+    Request body:
+    {
+        "frame": "base64-encoded image data",
+        "frame_num": 123
+    }
+    
+    Returns detection results with temporal tracking and violation alerts.
+    """
+    try:
+        import base64
+        import cv2
+        import numpy as np
+        from app.services.detector_service import detector_service
+        from app.crud.factory_area import get_area_safety_rules
+        
+        # Extract frame data
+        frame_data = request.get("frame", "")
+        frame_num = request.get("frame_num", 0)
+        
+        if not frame_data:
+            raise HTTPException(status_code=400, detail="No frame data provided")
+        
+        # Decode base64 image
+        if "," in frame_data:
+            frame_data = frame_data.split(",")[1]
+        
+        img_bytes = base64.b64decode(frame_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Invalid image data")
+        
+        # Check if detector service is available
+        if not detector_service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="PPE detection service is not available"
+            )
+        
+        # Get camera data
+        camera = crud_camera.get_camera(db, camera_id=camera_id)
+        if not camera:
+            raise HTTPException(status_code=404, detail="Camera not found")
+        
+        # Load factory area rules
+        factory_area_name = "Unknown Area"
+        camera_name = camera.name
+        required_ppe = []
+        
+        if camera.factory_area_id:
+            factory_area = camera.factory_area
+            if factory_area:
+                factory_area_name = factory_area.name
+                required_ppe = get_area_safety_rules(db, camera.factory_area_id)
+        
+        # Detect with temporal tracking and violation checking
+        detections, tracked_persons, violations = detector_service.check_violations_with_tracking(
+            frame=frame,
+            camera_id=camera_id,
+            factory_area_name=factory_area_name,
+            camera_name=camera_name,
+            required_ppe=required_ppe,
+            frame_num=frame_num
+        )
+        
+        # Format detections for frontend
+        results = []
+        for det in detections:
+            x1, y1, x2, y2 = det["box"]
+            detection_result = {
+                "class_name": det["cls_name"],
+                "confidence": float(det["conf"]),
+                "box": {
+                    "x1": int(x1),
+                    "y1": int(y1),
+                    "x2": int(x2),
+                    "y2": int(y2)
+                }
+            }
+            results.append(detection_result)
+        
+        # Add person tracking information
+        tracked_persons_data = []
+        for person in tracked_persons:
+            x1, y1, x2, y2 = person.box
+            person_data = {
+                "person_id": person.person_id,
+                "box": {
+                    "x1": int(x1),
+                    "y1": int(y1),
+                    "x2": int(x2),
+                    "y2": int(y2)
+                },
+                "recognized_name": person.recognized_name,
+                "frames_seen": person.frames_seen,
+                "ppe_status": {}
+            }
+            
+            # Add PPE status for required items
+            for ppe_type in required_ppe:
+                has_ppe = person.get_stable_ppe_status(ppe_type, frame_num, grace_frames=2)
+                person_data["ppe_status"][ppe_type] = has_ppe
+            
+            tracked_persons_data.append(person_data)
+        
+        # Store violations in database
+        from app.crud.violation import create_violation
+        from app.schemas.violation import ViolationCreate
+        from app.models.violation import ViolationType
+        
+        violation_records = []
+        for violation in violations:
+            # Map violation type to enum
+            violation_type_str = violation.get('violation_type', 'incomplete_ppe')
+            violation_type = None
+            
+            if violation_type_str == 'no_helmet':
+                violation_type = ViolationType.NO_HELMET
+            elif violation_type_str == 'no_vest' or violation_type_str == 'no_safety-vest':
+                violation_type = ViolationType.NO_VEST
+            elif violation_type_str == 'no_gloves':
+                violation_type = ViolationType.NO_GLOVES
+            elif violation_type_str == 'no_boots':
+                violation_type = ViolationType.NO_BOOTS
+            elif violation_type_str == 'no_mask':
+                violation_type = ViolationType.NO_MASK
+            elif violation_type_str == 'no_goggles':
+                violation_type = ViolationType.NO_GOGGLES
+            else:
+                violation_type = ViolationType.INCOMPLETE_PPE
+            
+            # Create violation record
+            violation_create = ViolationCreate(
+                camera_id=camera_id,
+                violation_type=violation_type,
+                description=violation.get('description', ''),
+                confidence_score=violation.get('confidence_score', 0),
+                bbox_coordinates=violation.get('bbox_coordinates'),
+                evidence_start_image=violation.get('evidence_images', {}).get('start'),
+                evidence_middle_image=violation.get('evidence_images', {}).get('middle'),
+                evidence_end_image=violation.get('evidence_images', {}).get('end'),
+                person_tracker_id=violation.get('person_tracker_id'),
+                duration_frames=violation.get('duration_frames')
+            )
+            
+            db_violation = create_violation(db, violation_create)
+            violation_records.append({
+                "id": db_violation.id,
+                "employee_name": violation.get('employee_name', 'Unknown'),
+                "violation_type": violation.get('violation_type'),
+                "factory_area": violation.get('factory_area'),
+                "camera_name": violation.get('camera_name'),
+                "timestamp": violation.get('timestamp'),
+                "duration_frames": violation.get('duration_frames'),
+                "confidence_score": violation.get('confidence_score'),
+                "evidence_images": violation.get('evidence_images', {})
+            })
+        
+        return {
+            "success": True,
+            "detections": results,
+            "tracked_persons": tracked_persons_data,
+            "violations": violation_records,
+            "total_detections": len(results),
+            "total_tracked_persons": len(tracked_persons_data),
+            "factory_area": factory_area_name,
+            "required_ppe": required_ppe
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error processing frame: {str(e)}")
+
+
