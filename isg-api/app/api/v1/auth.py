@@ -85,27 +85,34 @@ def login_for_access_token(
     cookie_secure = settings.COOKIE_SECURE and settings.USE_HTTPS
     cookie_samesite = settings.COOKIE_SAMESITE
     
+    # Prepare cookie kwargs
+    cookie_kwargs_access = {
+        "key": "access_token",
+        "value": access_token,
+        "httponly": True,
+        "secure": cookie_secure,
+        "samesite": cookie_samesite,
+        "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }
+    if settings.COOKIE_DOMAIN:
+        cookie_kwargs_access["domain"] = settings.COOKIE_DOMAIN
+    
+    cookie_kwargs_refresh = {
+        "key": "refresh_token",
+        "value": refresh_token,
+        "httponly": True,
+        "secure": cookie_secure,
+        "samesite": cookie_samesite,
+        "max_age": settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+    }
+    if settings.COOKIE_DOMAIN:
+        cookie_kwargs_refresh["domain"] = settings.COOKIE_DOMAIN
+    
     # Set access token cookie
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        domain=settings.COOKIE_DOMAIN
-    )
+    response.set_cookie(**cookie_kwargs_access)
     
     # Set refresh token cookie
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        domain=settings.COOKIE_DOMAIN
-    )
+    response.set_cookie(**cookie_kwargs_refresh)
     
     # Still return tokens in response for backward compatibility during transition
     return {
@@ -181,25 +188,31 @@ def refresh_access_token(
         cookie_secure = settings.COOKIE_SECURE and settings.USE_HTTPS
         cookie_samesite = settings.COOKIE_SAMESITE
         
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=cookie_secure,
-            samesite=cookie_samesite,
-            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            domain=settings.COOKIE_DOMAIN
-        )
+        # Prepare cookie kwargs
+        cookie_kwargs_access = {
+            "key": "access_token",
+            "value": access_token,
+            "httponly": True,
+            "secure": cookie_secure,
+            "samesite": cookie_samesite,
+            "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        }
+        if settings.COOKIE_DOMAIN:
+            cookie_kwargs_access["domain"] = settings.COOKIE_DOMAIN
         
-        response.set_cookie(
-            key="refresh_token",
-            value=new_refresh_token,
-            httponly=True,
-            secure=cookie_secure,
-            samesite=cookie_samesite,
-            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-            domain=settings.COOKIE_DOMAIN
-        )
+        cookie_kwargs_refresh = {
+            "key": "refresh_token",
+            "value": new_refresh_token,
+            "httponly": True,
+            "secure": cookie_secure,
+            "samesite": cookie_samesite,
+            "max_age": settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        }
+        if settings.COOKIE_DOMAIN:
+            cookie_kwargs_refresh["domain"] = settings.COOKIE_DOMAIN
+        
+        response.set_cookie(**cookie_kwargs_access)
+        response.set_cookie(**cookie_kwargs_refresh)
         
         return {
             "access_token": access_token,
