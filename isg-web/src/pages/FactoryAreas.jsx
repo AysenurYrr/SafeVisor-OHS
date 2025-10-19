@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { FactoryAreasAPI, CamerasAPI } from '../services/api'
+import { useNavigate } from 'react-router-dom'
+import { FactoryAreasAPI, CamerasAPI, api } from '../services/api'
 import { useAuth } from '../context/AuthContext'
 import Icon from '../components/Icon'
 import Button from '../components/Button'
@@ -8,7 +9,8 @@ import Loading from '../components/Loading'
 
 export default function FactoryAreas() {
   // Bring in hasRole to centralize permission checks
-  const { user, hasRole } = useAuth()
+  const { user, hasRole, token } = useAuth()
+  const navigate = useNavigate()
   const [areas, setAreas] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -26,6 +28,11 @@ export default function FactoryAreas() {
   const [error, setError] = useState(null)
   const [includeInactive, setIncludeInactive] = useState(false)
   const [debounceTimer, setDebounceTimer] = useState(null)
+  
+  // New state for detailed view modal
+  const [showDetailModal, setShowDetailModal] = useState(false)
+  const [selectedArea, setSelectedArea] = useState(null)
+  const [availableCameras, setAvailableCameras] = useState([])
 
   // Permissions using centralized role helper (handles aliases internally)
   const canManageAreas = hasRole(['ADMIN', 'ADMIN (IT)', 'MANAGER'])
@@ -174,6 +181,65 @@ export default function FactoryAreas() {
     }))
   }
 
+  const handleViewDetails = async (area) => {
+    setSelectedArea(area)
+    setShowDetailModal(true)
+    // Load available cameras for this area
+    try {
+      const response = await api.get(`/api/v1/factory-areas/${area.id}/available-cameras`)
+      setAvailableCameras(response.data || [])
+    } catch (err) {
+      console.error('Error loading available cameras:', err)
+    }
+  }
+
+  const handleLinkCamera = async (cameraId) => {
+    if (!selectedArea) return
+    try {
+      await api.post(`/api/v1/factory-areas/${selectedArea.id}/cameras/${cameraId}/link`)
+      // Reload area details and available cameras
+      await loadAreas()
+      const updatedArea = areas.find(a => a.id === selectedArea.id)
+      setSelectedArea(updatedArea)
+      const response = await api.get(`/api/v1/factory-areas/${selectedArea.id}/available-cameras`)
+      setAvailableCameras(response.data || [])
+    } catch (err) {
+      console.error('Error linking camera:', err)
+      setError(err.response?.data?.detail || 'Failed to link camera')
+    }
+  }
+
+  const handleUnlinkCamera = async (cameraId) => {
+    if (!selectedArea) return
+    try {
+      await api.delete(`/api/v1/factory-areas/${selectedArea.id}/cameras/${cameraId}/unlink`)
+      // Reload area details and available cameras
+      await loadAreas()
+      const updatedArea = areas.find(a => a.id === selectedArea.id)
+      setSelectedArea(updatedArea)
+      const response = await api.get(`/api/v1/factory-areas/${selectedArea.id}/available-cameras`)
+      setAvailableCameras(response.data || [])
+    } catch (err) {
+      console.error('Error unlinking camera:', err)
+      setError(err.response?.data?.detail || 'Failed to unlink camera')
+    }
+  }
+
+  const handleWatchCamera = (camera) => {
+    // Navigate to Cameras page with camera and area information
+    navigate('/cameras', {
+      state: {
+        cameraId: camera.id,
+        camera: camera,
+        factoryArea: {
+          id: selectedArea.id,
+          name: selectedArea.name,
+          safetyRules: selectedArea.safety_rules || []
+        }
+      }
+    })
+  }
+
   // Adapted to Table component API (header, accessor, cell)
   const columns = [
     {
@@ -221,6 +287,13 @@ export default function FactoryAreas() {
       accessor: 'id',
       cell: (row) => (
         <div className="flex gap-2">
+          <button
+            onClick={() => handleViewDetails(row)}
+            className="text-blue-600 hover:text-blue-700"
+            title="View Details"
+          >
+            <Icon name="eye" className="w-4 h-4" />
+          </button>
           {canManageAreas && (
             <button
               onClick={() => handleEdit(row)}
@@ -443,6 +516,113 @@ export default function FactoryAreas() {
           ) : (
             <Table columns={columns} data={areas} />
           )}
+        </div>
+      )}
+
+      {/* Detailed View Modal */}
+      {showDetailModal && selectedArea && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b border-neutral-200 px-6 py-4 flex justify-between items-center">
+              <h2 className="text-2xl font-semibold text-neutral-900">{selectedArea.name}</h2>
+              <button
+                onClick={() => setShowDetailModal(false)}
+                className="text-neutral-500 hover:text-neutral-700"
+              >
+                <Icon name="x" className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {/* Area Details */}
+              <div className="bg-neutral-50 rounded-lg p-4">
+                <h3 className="font-semibold text-lg mb-3">Area Details</h3>
+                <div className="space-y-2">
+                  <div>
+                    <span className="font-medium">Description:</span>
+                    <p className="text-neutral-600">{selectedArea.description || 'No description'}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium">Status:</span>
+                    <span className={`ml-2 badge ${selectedArea.is_active ? 'badge-success' : 'badge-secondary'}`}>
+                      {selectedArea.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-medium">Safety Rules:</span>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {selectedArea.safety_rules?.map(rule => (
+                        <span key={rule} className="badge badge-primary">{rule}</span>
+                      ))}
+                      {(!selectedArea.safety_rules || selectedArea.safety_rules.length === 0) && (
+                        <span className="text-neutral-500">No safety rules defined</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Cameras */}
+              <div>
+                <h3 className="font-semibold text-lg mb-3">Current Cameras ({selectedArea.cameras?.length || 0})</h3>
+                {selectedArea.cameras && selectedArea.cameras.length > 0 ? (
+                  <div className="space-y-2">
+                    {selectedArea.cameras.map(camera => (
+                      <div key={camera.id} className="flex items-center justify-between p-3 bg-white border border-neutral-200 rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-medium">{camera.name}</div>
+                          <div className="text-sm text-neutral-600">{camera.location}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleWatchCamera(camera)}
+                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                          >
+                            Watch
+                          </button>
+                          {canManageAreas && (
+                            <button
+                              onClick={() => handleUnlinkCamera(camera.id)}
+                              className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                            >
+                              Unlink
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-neutral-500">No cameras linked to this area</p>
+                )}
+              </div>
+
+              {/* Available Cameras */}
+              {canManageAreas && availableCameras.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-lg mb-3">Available Cameras ({availableCameras.length})</h3>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {availableCameras.map(camera => (
+                      <div key={camera.id} className="flex items-center justify-between p-3 bg-neutral-50 border border-neutral-200 rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-medium">{camera.name}</div>
+                          <div className="text-sm text-neutral-600">{camera.location}</div>
+                        </div>
+                        <button
+                          onClick={() => handleLinkCamera(camera.id)}
+                          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                        >
+                          Link
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

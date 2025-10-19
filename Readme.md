@@ -50,6 +50,45 @@ docker compose up -d
 ## Documentation
 - See `isg-api/README.md` for API details
 - See `isg-web/README.md` for frontend details
+- **See `SECURITY_CONFIGURATION.md` for production security setup**
+
+## Security Features
+
+This application implements production-grade security measures:
+
+### Authentication & Authorization
+- **HttpOnly Cookies**: JWT tokens stored in HttpOnly cookies to prevent XSS attacks
+- **Argon2 Password Hashing**: Industry-standard password hashing algorithm
+- **Account Lockout**: Automatic lockout after failed login attempts (15 minutes)
+- **Rate Limiting**: Protection against brute-force attacks (5 login attempts per minute)
+- **Generic Error Messages**: Prevents user enumeration attacks
+
+### Data Security
+- **File Upload Validation**: Content-based file type checking and size limits
+- **Filename Sanitization**: Prevention of path traversal attacks
+- **Input Validation**: All user inputs are validated and sanitized
+- **SQL Injection Protection**: SQLAlchemy ORM prevents SQL injection
+
+### Network Security
+- **HTTPS Support**: Configured for HTTPS in production
+- **CORS Restrictions**: Configurable CORS origins (no wildcards in production)
+- **Secure Cookies**: SameSite and Secure flags for CSRF protection
+
+### Access Control
+- **Role-Based Access Control (RBAC)**: Admin, Manager, HSE Expert roles
+- **Protected Routes**: Frontend and backend route protection
+- **Audit Logging**: Comprehensive logging of user actions
+
+### Production Deployment
+Before deploying to production:
+1. Review `SECURITY_CONFIGURATION.md` thoroughly
+2. Update all environment variables (especially `SECRET_KEY`)
+3. Enable HTTPS and set `COOKIE_SECURE=true`
+4. Configure proper CORS origins
+5. Set strong passwords for admin accounts
+6. Enable monitoring and logging
+
+⚠️ **Default credentials are for development only. Change them before deploying to production!**
 
 docker exec -it isg-api alembic current
 

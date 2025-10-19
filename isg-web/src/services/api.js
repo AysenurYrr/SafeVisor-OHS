@@ -35,15 +35,28 @@ export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-  }
+  },
+  withCredentials: true  // Important: send cookies with requests
 })
 
-// Request interceptor to add auth token
+// Global flags to coordinate refresh attempts
+let isRefreshing = false
+let refreshFailed = false
+let refreshWaiters = []
+
+function notifyRefreshWaiters(success = true) {
+  refreshWaiters.forEach(({ resolve, reject, request }) => {
+    if (success) {
+      resolve(api(request))
+    } else {
+      reject(new Error('refresh_failed'))
+    }
+  })
+  refreshWaiters = []
+}
+
+// Request interceptor - cookies are sent automatically, no need to add headers
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
   return config
 })
 
@@ -51,35 +64,50 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config
+    const originalRequest = error.config || {}
 
-    // Handle 401 errors (token expired)
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Do not try to refresh if the failing call is the refresh endpoint itself
+    const isRefreshCall = typeof originalRequest.url === 'string' && originalRequest.url.includes('/api/v1/users/refresh')
+
+    // Handle 401 errors (token expired) - try to refresh once per request
+    if (error.response?.status === 401 && !originalRequest._retry && !isRefreshCall) {
+      if (refreshFailed) {
+        // Avoid further attempts this session
+        window.location.href = '/login'
+        return Promise.reject(error)
+      }
+
       originalRequest._retry = true
-      
-      const refreshToken = localStorage.getItem('refreshToken')
-      if (refreshToken) {
-        try {
-          const response = await api.post(`/auth/refresh?refresh_token=${encodeURIComponent(refreshToken)}`)
-          const { access_token, refresh_token } = response.data
-          
-          localStorage.setItem('token', access_token)
-          localStorage.setItem('refreshToken', refresh_token)
-          
-          // Retry original request with new token
-          originalRequest.headers.Authorization = `Bearer ${access_token}`
-          return api(originalRequest)
-        } catch (refreshError) {
-          // Refresh failed, redirect to login
-          localStorage.removeItem('token')
-          localStorage.removeItem('refreshToken')
-          localStorage.removeItem('user')
-          window.location.href = '/login'
-          return Promise.reject(refreshError)
-        }
+
+      // If a refresh is already in progress, queue this request
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          refreshWaiters.push({ resolve, reject, request: originalRequest })
+        })
+      }
+
+      // Start a single refresh attempt for all pending 401s
+      isRefreshing = true
+      try {
+        await api.post('/api/v1/users/refresh')
+        isRefreshing = false
+        notifyRefreshWaiters(true)
+        // Retry the original request
+        return api(originalRequest)
+      } catch (refreshError) {
+        isRefreshing = false
+        refreshFailed = true
+        notifyRefreshWaiters(false)
+        window.location.href = '/login'
+        return Promise.reject(refreshError)
       }
     }
-    
+
+    // If the refresh endpoint itself returned 401 (or any other unhandled 401), redirect to login
+    if (error.response?.status === 401 && isRefreshCall) {
+      window.location.href = '/login'
+    }
+
     return Promise.reject(error)
   }
 )
@@ -91,25 +119,25 @@ export const AuthAPI = {
     const form = new URLSearchParams()
     form.append('username', email)
     form.append('password', password)
-    const response = await api.post('/auth/login', form, {
+    const response = await api.post('/api/v1/users/login', form, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
     return response.data
   },
 
   async getCurrentUser() {
-    const response = await api.get('/auth/me')
+    const response = await api.get('/api/v1/users/me')
     return response.data
   },
 
   async logout() {
-    const response = await api.post('/auth/logout')
+    const response = await api.post('/api/v1/users/logout')
     return response.data
   },
 
   async refreshToken(refreshToken) {
-    // Backend expects refresh_token as a query parameter
-    const response = await api.post(`/auth/refresh?refresh_token=${encodeURIComponent(refreshToken)}`)
+    // Backend now reads refresh_token from cookie
+    const response = await api.post('/api/v1/users/refresh')
     return response.data
   }
 }
@@ -422,6 +450,21 @@ export const FactoryAreasAPI = {
 
   async getSafetyRules() {
     const response = await api.get('/api/v1/factory-areas/safety-rules')
+    return response.data
+  },
+
+  async linkCamera(areaId, cameraId) {
+    const response = await api.post(`/api/v1/factory-areas/${areaId}/cameras/${cameraId}/link`)
+    return response.data
+  },
+
+  async unlinkCamera(areaId, cameraId) {
+    const response = await api.delete(`/api/v1/factory-areas/${areaId}/cameras/${cameraId}/unlink`)
+    return response.data
+  },
+
+  async getAvailableCameras(areaId) {
+    const response = await api.get(`/api/v1/factory-areas/${areaId}/available-cameras`)
     return response.data
   }
 }

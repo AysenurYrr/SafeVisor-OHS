@@ -1,6 +1,7 @@
 import React from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { ErrorBoundary } from './components/ErrorHandling'
 import PrivateRoute from './routes/PrivateRoute'
 
 import AuthLayout from './layouts/AuthLayout'
@@ -19,29 +20,31 @@ import LiveCamera from './pages/LiveCamera'
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Routes>
-        <Route element={<AuthLayout />}> 
-          <Route path="/login" element={<Login />} />
-        </Route>
-
-        <Route element={<PrivateRoute />}> 
-          <Route element={<DashboardLayout />}> 
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/employees" element={<Employees />} />
-            <Route path="/employee-management" element={<EmployeeManagement />} />
-            <Route path="/cameras" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><Cameras /></PrivateRoute>} />
-            <Route path="/factory-areas" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><FactoryAreas /></PrivateRoute>} />
-            <Route path="/live-camera" element={<LiveCamera />} />
-            <Route path="/events/violations" element={<Violations />} />
-            <Route path="/events/pose" element={<Pose />} />
-            <Route path="/admin/users" element={<PrivateRoute allowedRoles={["Admin (IT)"]}><Users /></PrivateRoute>} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <Routes>
+          <Route element={<AuthLayout />}> 
+            <Route path="/login" element={<Login />} />
           </Route>
-        </Route>
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </AuthProvider>
+          <Route element={<PrivateRoute />}> 
+            <Route element={<DashboardLayout />}> 
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/employees" element={<Employees />} />
+              <Route path="/employee-management" element={<EmployeeManagement />} />
+              <Route path="/cameras" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><Cameras /></PrivateRoute>} />
+              <Route path="/factory-areas" element={<PrivateRoute allowedRoles={["Admin (IT)", "Manager"]}><FactoryAreas /></PrivateRoute>} />
+              <Route path="/live-camera" element={<LiveCamera />} />
+              <Route path="/events/violations" element={<Violations />} />
+              <Route path="/events/pose" element={<Pose />} />
+              <Route path="/admin/users" element={<PrivateRoute allowedRoles={["Admin (IT)"]}><Users /></PrivateRoute>} />
+            </Route>
+          </Route>
+
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }

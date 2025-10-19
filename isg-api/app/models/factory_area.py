@@ -4,14 +4,6 @@ from sqlalchemy.sql import func
 from app.db.session import Base
 
 
-# Association table for many-to-many relationship between areas and cameras
-area_cameras = Table(
-    'area_cameras',
-    Base.metadata,
-    Column('area_id', Integer, ForeignKey('factory_areas.id', ondelete='CASCADE'), primary_key=True),
-    Column('camera_id', Integer, ForeignKey('cameras.id', ondelete='CASCADE'), primary_key=True)
-)
-
 # Association table for many-to-many relationship between areas and safety rules
 area_rules = Table(
     'area_rules',
@@ -34,4 +26,4 @@ class FactoryArea(Base):
 
     # Relationships
     created_by_user = relationship("User", back_populates="created_factory_areas", lazy="select")
-    cameras = relationship("Camera", secondary=area_cameras, back_populates="factory_areas", lazy="select")
+    cameras = relationship("Camera", back_populates="factory_area", lazy="select", cascade="all")

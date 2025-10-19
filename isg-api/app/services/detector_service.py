@@ -3,9 +3,11 @@ PPE Detection Service
 
 This service integrates the YOLO model from ppe_detection_system into the FastAPI backend.
 It provides a singleton detector that can process video frames and detect PPE violations.
+Includes temporal tracking and smart violation reporting.
 """
 
 import os
+import sys
 import logging
 from typing import Dict, List, Any, Optional, Generator, Tuple
 from threading import Lock
@@ -32,10 +34,31 @@ except ImportError as e:
         logging.error(f"Could not import any YoloDetector: {e}")
         YoloDetector = None
 
+# Import temporal tracking modules
+try:
+    # Add ppe_detection_system to path if needed
+    ppe_system_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        '..',
+        'ppe_detection_system'
+    )
+    if os.path.exists(ppe_system_path) and ppe_system_path not in sys.path:
+        sys.path.insert(0, ppe_system_path)
+    
+    from temporal_tracker import TemporalTracker, PersonState
+    from violation_manager import ViolationManager
+    TEMPORAL_TRACKING_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Temporal tracking not available: {e}")
+    TEMPORAL_TRACKING_AVAILABLE = False
+    TemporalTracker = None
+    ViolationManager = None
+    PersonState = None
+
 logger = logging.getLogger(__name__)
 
 class PPEDetectorService:
-    """Singleton service for PPE detection using YOLO model."""
+    """Singleton service for PPE detection using YOLO model with temporal tracking."""
     
     _instance: Optional['PPEDetectorService'] = None
     _lock: Lock = Lock()
@@ -58,6 +81,11 @@ class PPEDetectorService:
         # Use plain assignment to avoid instance attribute annotations inside __init__
         self._detector = None  # type: ignore[assignment]
         self._model_loaded = False
+        
+        # Temporal tracking per camera
+        self._trackers: Dict[int, TemporalTracker] = {}
+        self._violation_managers: Dict[int, ViolationManager] = {}
+        
         # de-dup map: {(camera_id, violation_type): last_timestamp}
         self._last_violation_time = {}
         self._load_detector()
@@ -92,6 +120,100 @@ class PPEDetectorService:
         """Check if the detector is loaded and available."""
         return self._model_loaded and self._detector is not None
     
+    def is_temporal_tracking_available(self) -> bool:
+        """Check if temporal tracking is available."""
+        return TEMPORAL_TRACKING_AVAILABLE
+    
+    def get_or_create_tracker(self, camera_id: int) -> Optional[Any]:
+        """Get or create temporal tracker for a camera."""
+        if not TEMPORAL_TRACKING_AVAILABLE:
+            return None
+        
+        if camera_id not in self._trackers:
+            self._trackers[camera_id] = TemporalTracker(
+                max_distance=100,
+                max_missing_frames=30,
+                grace_frames=2,
+                confidence_threshold=0.2
+            )
+        
+        return self._trackers[camera_id]
+    
+    def get_or_create_violation_manager(self, camera_id: int, 
+                                       factory_area_name: str = "Unknown Area",
+                                       camera_name: str = "Unknown Camera",
+                                       required_ppe: Optional[List[str]] = None) -> Optional[Any]:
+        """Get or create violation manager for a camera."""
+        if not TEMPORAL_TRACKING_AVAILABLE:
+            return None
+        
+        if camera_id not in self._violation_managers:
+            violations_dir = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                'static',
+                'violations',
+                'images'
+            )
+            
+            self._violation_managers[camera_id] = ViolationManager(
+                factory_area_name=factory_area_name,
+                camera_name=camera_name,
+                min_consecutive_frames=5,
+                violation_timeout=5.0,
+                cleanup_interval=30.0,
+                violations_dir=violations_dir
+            )
+            
+            if required_ppe:
+                self._violation_managers[camera_id].set_required_ppe(required_ppe)
+        else:
+            # Update required PPE if provided and different
+            if required_ppe:
+                self._violation_managers[camera_id].set_required_ppe(required_ppe)
+        
+        return self._violation_managers[camera_id]
+    
+    def load_factory_area_rules(self, db_session, camera_id: int) -> Tuple[str, str, List[str]]:
+        """
+        Load factory area name, camera name, and safety rules for a camera.
+        
+        Args:
+            db_session: Database session
+            camera_id: Camera ID
+        
+        Returns:
+            Tuple of (factory_area_name, camera_name, required_ppe_list)
+        """
+        try:
+            from app.models.camera import Camera
+            from app.crud.factory_area import get_area_safety_rules
+            
+            # Get camera
+            camera = db_session.query(Camera).filter(Camera.id == camera_id).first()
+            
+            if not camera:
+                logger.warning(f"Camera {camera_id} not found")
+                return ("Unknown Area", "Unknown Camera", [])
+            
+            camera_name = camera.name
+            
+            # Get factory area
+            if camera.factory_area_id:
+                factory_area = camera.factory_area
+                factory_area_name = factory_area.name if factory_area else "Unknown Area"
+                
+                # Get safety rules
+                required_ppe = get_area_safety_rules(db_session, camera.factory_area_id)
+            else:
+                factory_area_name = "No Area"
+                required_ppe = []
+            
+            return (factory_area_name, camera_name, required_ppe)
+            
+        except Exception as e:
+            logger.error(f"Error loading factory area rules: {e}")
+            return ("Unknown Area", "Unknown Camera", [])
+    
     def detect_ppe(self, frame) -> List[Dict[str, Any]]:
         """
         Detect PPE in a single frame.
@@ -112,6 +234,75 @@ class PPEDetectorService:
         except Exception as e:
             logger.error(f"Detection error: {e}")
             return []
+    
+    def detect_with_tracking(self, frame, camera_id: int, 
+                           recognitions: Optional[Dict[int, Tuple[str, float]]] = None) -> Tuple[List[Dict[str, Any]], List[Any]]:
+        """
+        Detect PPE with temporal tracking for stabilization.
+        
+        Args:
+            frame: OpenCV image frame
+            camera_id: Camera ID for tracking
+            recognitions: Optional dict mapping person_id to (name, confidence)
+        
+        Returns:
+            Tuple of (detections, tracked_persons)
+        """
+        # Get raw detections
+        detections = self.detect_ppe(frame)
+        
+        # Get or create tracker
+        tracker = self.get_or_create_tracker(camera_id)
+        
+        if tracker is None or not TEMPORAL_TRACKING_AVAILABLE:
+            # No tracking available, return raw detections
+            return detections, []
+        
+        # Update tracker with detections
+        tracked_persons = tracker.update_frame(detections, recognitions)
+        
+        return detections, tracked_persons
+    
+    def check_violations_with_tracking(self, frame, camera_id: int,
+                                      factory_area_name: str = "Unknown Area",
+                                      camera_name: str = "Unknown Camera",
+                                      required_ppe: Optional[List[str]] = None,
+                                      frame_num: int = 0,
+                                      recognitions: Optional[Dict[int, Tuple[str, float]]] = None) -> Tuple[List[Dict[str, Any]], List[Any], List[Dict[str, Any]]]:
+        """
+        Detect PPE, track persons, and check for violations.
+        
+        Args:
+            frame: OpenCV image frame
+            camera_id: Camera ID
+            factory_area_name: Name of factory area
+            camera_name: Name of camera
+            required_ppe: List of required PPE items
+            frame_num: Current frame number
+            recognitions: Optional dict mapping person_id to (name, confidence)
+        
+        Returns:
+            Tuple of (detections, tracked_persons, violations_to_report)
+        """
+        # Detect with tracking
+        detections, tracked_persons = self.detect_with_tracking(
+            frame, camera_id, recognitions
+        )
+        
+        # Get or create violation manager
+        violation_manager = self.get_or_create_violation_manager(
+            camera_id, factory_area_name, camera_name, required_ppe
+        )
+        
+        violations_to_report = []
+        
+        if violation_manager and tracked_persons:
+            # Check for violations
+            violations_to_report = violation_manager.check_violations(
+                tracked_persons, frame, frame_num
+            )
+        
+        return detections, tracked_persons, violations_to_report
     
     def draw_detections(self, frame, detections: List[Dict[str, Any]]):
         """
