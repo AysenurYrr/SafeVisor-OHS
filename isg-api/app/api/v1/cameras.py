@@ -14,6 +14,7 @@ from app.schemas.camera import (
     CameraListResponse,
     CameraStatus
 )
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -31,52 +32,54 @@ def stream_demo_video(
     Stream demo video (mp4) with optional HTTP Range support.
     Access restricted to Admin or Manager.
     """
-    # Authenticate: Accept Authorization: Bearer ... or token query param
-    from app.core import security as _security
-    from app.crud import user as _crud_user
+    # Allow streaming without auth when in development or when RELAX_CAMERA_AUTH is enabled
+    if not (settings.ENVIRONMENT.lower() == "development" or settings.RELAX_CAMERA_AUTH):
+        # Authenticate: Accept Authorization: Bearer ... or token query param
+        from app.core import security as _security
+        from app.crud import user as _crud_user
 
-    token_value: Optional[str] = None
-    # Try cookie first (for HttpOnly cookie auth)
-    token_value = request.cookies.get("access_token")
-    # Fall back to Authorization header
-    if not token_value and token_header and getattr(token_header, "credentials", None):
-        token_value = token_header.credentials
-    # Fall back to query parameters (for video streaming in browsers)
-    elif not token_value and token_q:
-        token_value = token_q
-    elif not token_value and token_alt:
-        token_value = token_alt
+        token_value: Optional[str] = None
+        # Try cookie first (for HttpOnly cookie auth)
+        token_value = request.cookies.get("access_token")
+        # Fall back to Authorization header
+        if not token_value and token_header and getattr(token_header, "credentials", None):
+            token_value = token_header.credentials
+        # Fall back to query parameters (for video streaming in browsers)
+        elif not token_value and token_q:
+            token_value = token_q
+        elif not token_value and token_alt:
+            token_value = token_alt
 
-    if not token_value:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
+        if not token_value:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
 
-    try:
-        # Sanitize possible prefixes/quotes
-        tok = token_value.strip().strip('"').strip("'")
-        if tok.lower().startswith("bearer "):
-            tok = tok[7:].strip()
-        payload = _security.verify_token(tok)
-        if payload is None:
-            raise ValueError("Invalid token")
-        user_id = int(payload)
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+        try:
+            # Sanitize possible prefixes/quotes
+            tok = token_value.strip().strip('"').strip("'")
+            if tok.lower().startswith("bearer "):
+                tok = tok[7:].strip()
+            payload = _security.verify_token(tok)
+            if payload is None:
+                raise ValueError("Invalid token")
+            user_id = int(payload)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
 
-    user = _crud_user.get_user(db, user_id=user_id)
-    if not user or not _crud_user.is_active(user):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
+        user = _crud_user.get_user(db, user_id=user_id)
+        if not user or not _crud_user.is_active(user):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
 
-    # Role check: allow ADMIN or MANAGER or superuser
-    names = set()
-    if getattr(user, "role", None) and getattr(user.role, "name", None):
-        names.add(user.role.name.upper())
-    if getattr(user, "roles", None):
-        for r in user.roles:
-            if r and getattr(r, "name", None):
-                names.add(r.name.upper())
-    allowed_roles = {"ADMIN", "MANAGER"}
-    if not (names & allowed_roles) and not _crud_user.is_superuser(user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager or Admin access required")
+        # Role check: allow ADMIN or MANAGER or superuser
+        names = set()
+        if getattr(user, "role", None) and getattr(user.role, "name", None):
+            names.add(user.role.name.upper())
+        if getattr(user, "roles", None):
+            for r in user.roles:
+                if r and getattr(r, "name", None):
+                    names.add(r.name.upper())
+        allowed_roles = {"ADMIN", "MANAGER"}
+        if not (names & allowed_roles) and not _crud_user.is_superuser(user):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager or Admin access required")
 
     # Resolve demo file path: app/static/videos/demo.* (prefer mp4)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))  # .../app
@@ -250,44 +253,46 @@ def stream_camera_video(
     Camera-1 -> demo.mp4, Camera-2 -> demo2.mp4, Camera-3 -> demo3.mp4
     Access restricted to Admin or Manager.
     """
-    # Authenticate
-    from app.core import security as _security
-    from app.crud import user as _crud_user
+    # Allow streaming without auth when in development or when RELAX_CAMERA_AUTH is enabled
+    if not (settings.ENVIRONMENT.lower() == "development" or settings.RELAX_CAMERA_AUTH):
+        # Authenticate
+        from app.core import security as _security
+        from app.crud import user as _crud_user
 
-    token_value: Optional[str] = None
-    # Try cookie first (for HttpOnly cookie auth)
-    token_value = request.cookies.get("access_token")
-    # Fall back to Authorization header
-    if not token_value and token_header and getattr(token_header, "credentials", None):
-        token_value = token_header.credentials
-    # Fall back to query parameter (for video streaming in browsers)
-    elif not token_value and token_q:
-        token_value = token_q
-    if not token_value:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
-    try:
-        payload = _security.verify_token(token_value)
-        if payload is None:
-            raise ValueError("Invalid token")
-        user_id = int(payload)
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+        token_value: Optional[str] = None
+        # Try cookie first (for HttpOnly cookie auth)
+        token_value = request.cookies.get("access_token")
+        # Fall back to Authorization header
+        if not token_value and token_header and getattr(token_header, "credentials", None):
+            token_value = token_header.credentials
+        # Fall back to query parameter (for video streaming in browsers)
+        elif not token_value and token_q:
+            token_value = token_q
+        if not token_value:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
+        try:
+            payload = _security.verify_token(token_value)
+            if payload is None:
+                raise ValueError("Invalid token")
+            user_id = int(payload)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
 
-    user = _crud_user.get_user(db, user_id=user_id)
-    if not user or not _crud_user.is_active(user):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
+        user = _crud_user.get_user(db, user_id=user_id)
+        if not user or not _crud_user.is_active(user):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
 
-    # Role check
-    names = set()
-    if getattr(user, "role", None) and getattr(user.role, "name", None):
-        names.add(user.role.name.upper())
-    if getattr(user, "roles", None):
-        for r in user.roles:
-            if r and getattr(r, "name", None):
-                names.add(r.name.upper())
-    allowed_roles = {"ADMIN", "MANAGER"}
-    if not (names & allowed_roles) and not _crud_user.is_superuser(user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager or Admin access required")
+        # Role check
+        names = set()
+        if getattr(user, "role", None) and getattr(user.role, "name", None):
+            names.add(user.role.name.upper())
+        if getattr(user, "roles", None):
+            for r in user.roles:
+                if r and getattr(r, "name", None):
+                    names.add(r.name.upper())
+        allowed_roles = {"ADMIN", "MANAGER"}
+        if not (names & allowed_roles) and not _crud_user.is_superuser(user):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager or Admin access required")
 
     # Map camera_id to file name
     mapping = {
@@ -503,7 +508,7 @@ async def detect_with_tracking(
     camera_id: int,
     request: dict,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: Optional[User] = Depends(deps.get_optional_current_user),
 ) -> dict:
     """
     Detect PPE with temporal tracking for a camera feed.
@@ -542,6 +547,10 @@ async def detect_with_tracking(
         if frame is None:
             raise HTTPException(status_code=400, detail="Invalid image data")
         
+        # Require authentication unless in development or when RELAX_CAMERA_AUTH is enabled
+        if not (settings.ENVIRONMENT.lower() == "development" or settings.RELAX_CAMERA_AUTH) and current_user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
         # Check if detector service is available
         if not detector_service.is_available():
             raise HTTPException(

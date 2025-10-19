@@ -45,9 +45,6 @@ def login_for_access_token(
             # Lock account for 15 minutes after 5 failures
             if u.failed_login_attempts >= 5:
                 u.locked_until = datetime.utcnow() + td(minutes=15)
-                u.failed_login_attempts = 0
-            db.commit()
-        # Generic error message to prevent user enumeration
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -165,14 +162,15 @@ def refresh_access_token(
                 detail="Account is inactive"
             )
         
-        # Check token exists in DB and not expired
+        # Check token exists in DB and not expired (unless fallback allowed for missing record)
         db_token = crud_token.get_refresh_token(db, token=refresh_token)
-        if not db_token or db_token.expires_at < datetime.utcnow():
-            # In development, tolerate missing DB record if the JWT is valid (e.g., after DB reset)
-            if settings.ENVIRONMENT.lower() == "development" and db_token is None:
-                pass  # proceed to rotate token below
-            else:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+        allow_missing_db = (settings.ENVIRONMENT.lower() == "development") or settings.RELAX_REFRESH_DB_MISS
+        if db_token is None:
+            if not allow_missing_db:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+        else:
+            if db_token.expires_at < datetime.utcnow():
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Expired refresh token")
         
         # Create new tokens
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

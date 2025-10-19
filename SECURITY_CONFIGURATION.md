@@ -350,3 +350,23 @@ If you discover a security vulnerability, please report it responsibly:
 1. Do not publicly disclose the vulnerability
 2. Contact the development team privately
 3. Allow reasonable time for a fix before disclosure
+
+## Operational Flexibility Flags (Advanced)
+
+In rare cases you may need production to behave like development temporarily. The API exposes two feature flags, configurable via environment variables, to relax certain controls without redeploying code. Use them sparingly and monitor closely.
+
+- RELAX_CAMERA_AUTH (default: false)
+    - When true, camera streaming and detection endpoints skip auth/role checks, matching development behavior. Turn on only behind network protections (e.g., VPN) and disable ASAP after the incident.
+
+- RELAX_REFRESH_DB_MISS (default: false)
+    - When true, the refresh endpoint accepts a valid, unexpired refresh JWT even if its DB record is missing (useful after DB resets/token table purges). This preserves sessions while you reconcile token storage.
+
+Example:
+
+```
+ENVIRONMENT=production
+RELAX_CAMERA_AUTH=true
+RELAX_REFRESH_DB_MISS=true
+```
+
+After enabling, restart the API service. Track usage via logs and plan to revert to secure defaults promptly.

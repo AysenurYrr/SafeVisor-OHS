@@ -34,7 +34,7 @@ export default function Cameras() {
     { id: 3, name: 'Camera-3', desc: 'Demo stream 3 (demo3.mp4)' },
   ]), [])
 
-  const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream?token=${encodeURIComponent(token || '')}`
+  const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream`
 
   // Fetch camera data and factory area info
   const fetchCameraAndFactoryInfo = useCallback(async (cameraId) => {

@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: str = "lax"  # lax, strict, or none
     COOKIE_DOMAIN: str | None = None  # Set to your domain in production
     
+    # Feature flags (can be enabled in production if required)
+    # When True, camera streaming/detection endpoints do not require auth
+    RELAX_CAMERA_AUTH: bool = False
+    # When True, allow refresh to succeed even if DB record for refresh token is missing (JWT still must be valid)
+    RELAX_REFRESH_DB_MISS: bool = False
+    
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = True
     LOGIN_RATE_LIMIT: str = "5/minute"  # 5 login attempts per minute per IP

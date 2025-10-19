@@ -65,12 +65,19 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config || {}
+    const currentPath = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : ''
 
     // Do not try to refresh if the failing call is the refresh endpoint itself
     const isRefreshCall = typeof originalRequest.url === 'string' && originalRequest.url.includes('/api/v1/users/refresh')
+    // Also skip refresh handling for auth endpoints and while on the login page
+    const isAuthEndpoint = typeof originalRequest.url === 'string' && (
+      originalRequest.url.includes('/api/v1/users/login') ||
+      originalRequest.url.includes('/api/v1/users/register') ||
+      originalRequest.url.includes('/api/v1/users/logout')
+    )
 
     // Handle 401 errors (token expired) - try to refresh once per request
-    if (error.response?.status === 401 && !originalRequest._retry && !isRefreshCall) {
+  if (error.response?.status === 401 && !originalRequest._retry && !isRefreshCall && !isAuthEndpoint && currentPath !== '/login') {
       if (refreshFailed) {
         // Avoid further attempts this session
         window.location.href = '/login'
@@ -103,8 +110,8 @@ api.interceptors.response.use(
       }
     }
 
-    // If the refresh endpoint itself returned 401 (or any other unhandled 401), redirect to login
-    if (error.response?.status === 401 && isRefreshCall) {
+    // If the refresh endpoint itself returned 401 (or any other unhandled 401), redirect to login (but avoid looping on login page)
+    if (error.response?.status === 401 && isRefreshCall && currentPath !== '/login') {
       window.location.href = '/login'
     }
 
