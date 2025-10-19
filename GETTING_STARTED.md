@@ -33,14 +33,35 @@ cd isg-api
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-**Step 2**: Start the frontend
+**Wait for the build to complete.** This may take a few minutes the first time as it installs all dependencies including the new `slowapi` package.
+
+**Step 2**: Verify containers are running
+```bash
+docker ps
+```
+
+You should see containers named `isg-api`, `isgdb`, and `isg-pgadmin` with status "Up".
+
+**Step 3**: Check the API is healthy
+```bash
+curl http://localhost:8000/health
+# Should return: {"status":"healthy"}
+```
+
+If containers aren't running, check logs:
+```bash
+docker compose logs api
+docker compose logs db
+```
+
+**Step 4**: Start the frontend
 ```bash
 cd isg-web
 npm install
 npm run dev
 ```
 
-**Step 3**: Access the application
+**Step 5**: Access the application
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
@@ -95,7 +116,83 @@ npm run dev
 
 ## Troubleshooting
 
-### Error: "ModuleNotFoundError: No module named 'fastapi'"
+### Docker Issues
+
+#### Containers not starting or "nothing happened"
+
+If you ran `docker compose up` but the containers aren't running:
+
+```bash
+cd isg-api
+
+# Check if containers are running
+docker ps
+
+# Check all containers (including stopped)
+docker ps -a
+
+# View logs to see what went wrong
+docker compose logs
+
+# View specific service logs
+docker compose logs api
+docker compose logs db
+
+# If build failed, rebuild from scratch
+docker compose down -v
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+#### Docker build failing with dependency errors
+
+The Docker build automatically installs all dependencies including `slowapi`. If the build fails:
+
+```bash
+cd isg-api
+
+# Clean everything and rebuild
+docker compose down -v
+docker system prune -f
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# Watch the logs in real-time
+docker compose logs -f api
+```
+
+#### Container exits immediately
+
+Check logs to see why:
+
+```bash
+docker compose logs api
+```
+
+Common causes:
+- Database not ready (wait 30 seconds and check again)
+- Port 8000 already in use (stop other services using that port)
+- Import errors (rebuild with `--no-cache`)
+
+#### Port conflicts
+
+If port 8000 or 5432 is already in use:
+
+```bash
+# Find what's using the port (Linux/Mac)
+lsof -i :8000
+lsof -i :5432
+
+# Find what's using the port (Windows)
+netstat -ano | findstr :8000
+netstat -ano | findstr :5432
+
+# Stop the conflicting process or change ports in docker-compose.dev.yml
+```
+
+### Local Development (Non-Docker) Issues
+
+#### Error: "ModuleNotFoundError: No module named 'fastapi'"
 
 This means dependencies aren't installed. Fix:
 
@@ -104,7 +201,7 @@ cd isg-api
 pip install -r requirements.txt
 ```
 
-### Error: "ModuleNotFoundError: No module named 'slowapi'"
+#### Error: "ModuleNotFoundError: No module named 'slowapi'"
 
 The security updates added a new dependency. Install it:
 
@@ -115,7 +212,7 @@ pip install slowapi==0.1.9
 pip install -r requirements.txt
 ```
 
-### Error: Import errors or "uvicorn/config.py" issues
+#### Error: Import errors or "uvicorn/config.py" issues
 
 Make sure you're in the right directory and have activated the virtual environment:
 
@@ -191,6 +288,104 @@ netstat -ano | findstr :8000  # Windows
 ```bash
 # Vite will automatically try the next available port (5174, 5175, etc.)
 # Or kill the process using port 5173
+```
+
+## Common Issue: "I ran docker compose but nothing happened"
+
+If you ran the Docker command but don't see any containers running or can't access the application:
+
+### Step 1: Check if containers are actually running
+
+```bash
+cd isg-api
+docker ps
+```
+
+**Expected output:**
+```
+CONTAINER ID   IMAGE          COMMAND                  STATUS         PORTS                    NAMES
+abc123...      isg-api        "uvicorn app.main:ap…"   Up 2 minutes   0.0.0.0:8000->8000/tcp   isg-api
+def456...      postgres:16    "docker-entrypoint.s…"   Up 2 minutes   0.0.0.0:5432->5432/tcp   isgdb
+ghi789...      pgadmin4       "/entrypoint.sh"         Up 2 minutes   0.0.0.0:5050->80/tcp     isg-pgadmin
+```
+
+**If you see nothing**, the containers failed to start. Check logs:
+
+```bash
+# View all logs
+docker compose logs
+
+# View just the API logs
+docker compose logs api
+
+# Follow logs in real-time
+docker compose logs -f api
+```
+
+### Step 2: Common problems and solutions
+
+**Problem: Import error for 'slowapi'**
+```
+ModuleNotFoundError: No module named 'slowapi'
+```
+
+**Solution:** The Docker image needs to be rebuilt to include the new dependency:
+```bash
+cd isg-api
+docker compose down
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+```
+
+**Problem: Database not ready**
+```
+could not connect to server: Connection refused
+```
+
+**Solution:** Wait 30 seconds for PostgreSQL to initialize, then restart the API:
+```bash
+docker compose restart api
+```
+
+**Problem: Port already in use**
+```
+bind: address already in use
+```
+
+**Solution:** Another service is using port 8000 or 5432. Either stop that service or change ports in docker-compose.dev.yml.
+
+### Step 3: Verify the API is working
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# View API docs
+open http://localhost:8000/docs  # Mac
+# or visit http://localhost:8000/docs in browser
+```
+
+### Step 4: If still not working, do a complete reset
+
+```bash
+cd isg-api
+
+# Stop everything
+docker compose down -v
+
+# Remove old images
+docker rmi isg-api-api 2>/dev/null || true
+
+# Rebuild from scratch
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache
+
+# Start with logs visible
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+# Watch for errors in the output
+# Once you see "Application startup complete", press Ctrl+C
+# Then start in detached mode
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
 ## Quick Reference
