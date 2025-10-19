@@ -168,7 +168,11 @@ def refresh_access_token(
         # Check token exists in DB and not expired
         db_token = crud_token.get_refresh_token(db, token=refresh_token)
         if not db_token or db_token.expires_at < datetime.utcnow():
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+            # In development, tolerate missing DB record if the JWT is valid (e.g., after DB reset)
+            if settings.ENVIRONMENT.lower() == "development" and db_token is None:
+                pass  # proceed to rotate token below
+            else:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
         
         # Create new tokens
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
