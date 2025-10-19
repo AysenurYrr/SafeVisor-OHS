@@ -12,6 +12,8 @@ venv/
 
 # Local data and env
 .env
+*.env
+.env.*
 isg.db
 pgdata/
 test*.db

@@ -23,6 +23,12 @@ pnpm-debug.log*
 .env.*.local
 isg-web/.env*
 isg-api/.env
+isg-api/.env.docker
+isg-api/.env.production
+isg-api/.env.development
+isg-api/.env.staging
+isg-api/.env.local
+isg-api/.env.*.local
 
 # Testing & coverage
 coverage/
