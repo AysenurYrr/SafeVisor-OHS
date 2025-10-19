@@ -85,27 +85,34 @@ def login_for_access_token(
     cookie_secure = settings.COOKIE_SECURE and settings.USE_HTTPS
     cookie_samesite = settings.COOKIE_SAMESITE
     
+    # Prepare cookie kwargs
+    cookie_kwargs_access = {
+        "key": "access_token",
+        "value": access_token,
+        "httponly": True,
+        "secure": cookie_secure,
+        "samesite": cookie_samesite,
+        "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }
+    if settings.COOKIE_DOMAIN:
+        cookie_kwargs_access["domain"] = settings.COOKIE_DOMAIN
+    
+    cookie_kwargs_refresh = {
+        "key": "refresh_token",
+        "value": refresh_token,
+        "httponly": True,
+        "secure": cookie_secure,
+        "samesite": cookie_samesite,
+        "max_age": settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+    }
+    if settings.COOKIE_DOMAIN:
+        cookie_kwargs_refresh["domain"] = settings.COOKIE_DOMAIN
+    
     # Set access token cookie
-    response.set_cookie(
-        key="access_token",
-        value=access_token,
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        domain=settings.COOKIE_DOMAIN
-    )
+    response.set_cookie(**cookie_kwargs_access)
     
     # Set refresh token cookie
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=cookie_secure,
-        samesite=cookie_samesite,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        domain=settings.COOKIE_DOMAIN
-    )
+    response.set_cookie(**cookie_kwargs_refresh)
     
     # Still return tokens in response for backward compatibility during transition
     return {
@@ -161,7 +168,11 @@ def refresh_access_token(
         # Check token exists in DB and not expired
         db_token = crud_token.get_refresh_token(db, token=refresh_token)
         if not db_token or db_token.expires_at < datetime.utcnow():
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+            # In development, tolerate missing DB record if the JWT is valid (e.g., after DB reset)
+            if settings.ENVIRONMENT.lower() == "development" and db_token is None:
+                pass  # proceed to rotate token below
+            else:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
         
         # Create new tokens
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -181,25 +192,31 @@ def refresh_access_token(
         cookie_secure = settings.COOKIE_SECURE and settings.USE_HTTPS
         cookie_samesite = settings.COOKIE_SAMESITE
         
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=cookie_secure,
-            samesite=cookie_samesite,
-            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            domain=settings.COOKIE_DOMAIN
-        )
+        # Prepare cookie kwargs
+        cookie_kwargs_access = {
+            "key": "access_token",
+            "value": access_token,
+            "httponly": True,
+            "secure": cookie_secure,
+            "samesite": cookie_samesite,
+            "max_age": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        }
+        if settings.COOKIE_DOMAIN:
+            cookie_kwargs_access["domain"] = settings.COOKIE_DOMAIN
         
-        response.set_cookie(
-            key="refresh_token",
-            value=new_refresh_token,
-            httponly=True,
-            secure=cookie_secure,
-            samesite=cookie_samesite,
-            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-            domain=settings.COOKIE_DOMAIN
-        )
+        cookie_kwargs_refresh = {
+            "key": "refresh_token",
+            "value": new_refresh_token,
+            "httponly": True,
+            "secure": cookie_secure,
+            "samesite": cookie_samesite,
+            "max_age": settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        }
+        if settings.COOKIE_DOMAIN:
+            cookie_kwargs_refresh["domain"] = settings.COOKIE_DOMAIN
+        
+        response.set_cookie(**cookie_kwargs_access)
+        response.set_cookie(**cookie_kwargs_refresh)
         
         return {
             "access_token": access_token,

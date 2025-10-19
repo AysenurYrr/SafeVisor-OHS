@@ -1,16 +1,17 @@
-"""Initial schema
+"""Recreate after missing migration
 
-Revision ID: c6268f92cfdb
+Revision ID: 2fa606699dab
 Revises: 
-Create Date: 2025-10-19 01:01:34.387195+00:00
+Create Date: 2025-10-19 13:00:48.204371+00:00
 
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import Text
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = 'c6268f92cfdb'
+revision = '2fa606699dab'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -116,7 +117,7 @@ def upgrade() -> None:
     sa.Column('photo_front_path', sa.String(length=500), nullable=True),
     sa.Column('photo_left_path', sa.String(length=500), nullable=True),
     sa.Column('photo_right_path', sa.String(length=500), nullable=True),
-    sa.Column('face_embedding', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
+    sa.Column('face_embedding', sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), 'postgresql'), nullable=True),
     sa.Column('violation_score', sa.Integer(), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=True),
     sa.Column('notes', sa.Text(), nullable=True),
@@ -215,7 +216,7 @@ def upgrade() -> None:
     sa.Column('action', sa.String(length=50), nullable=False),
     sa.Column('actor_id', sa.Integer(), nullable=True),
     sa.Column('timestamp', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
-    sa.Column('details', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
+    sa.Column('details', sa.JSON().with_variant(postgresql.JSONB(astext_type=Text()), 'postgresql'), nullable=True),
     sa.ForeignKeyConstraint(['actor_id'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['employee_id'], ['employees.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')

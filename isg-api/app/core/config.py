@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     USE_HTTPS: bool = False  # Set to True in production
     COOKIE_SECURE: bool = False  # Set to True in production (requires HTTPS)
     COOKIE_SAMESITE: str = "lax"  # lax, strict, or none
-    COOKIE_DOMAIN: str = None  # Set to your domain in production
+    COOKIE_DOMAIN: str | None = None  # Set to your domain in production
     
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = True
