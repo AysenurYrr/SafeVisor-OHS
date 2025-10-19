@@ -2,11 +2,10 @@ from datetime import timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from app.api import deps
 from app.core import security
 from app.core.config import settings
+from app.core.rate_limit import login_rate_limit_dependency
 from app.crud import user as crud_user
 from app.crud import audit as crud_audit
 from app.crud import token as crud_token
@@ -15,17 +14,14 @@ from app.schemas.user import Token, UserResponse, UserCreate
 
 router = APIRouter()
 
-# Create rate limiter instance
-limiter = Limiter(key_func=get_remote_address)
-
 
 @router.post("/login", response_model=Token)
-@limiter.limit(settings.LOGIN_RATE_LIMIT)
 def login_for_access_token(
     request: Request,
     response: Response,
     db: Session = Depends(deps.get_db),
-    form_data: OAuth2PasswordRequestForm = Depends()
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    _rate_limit: None = Depends(login_rate_limit_dependency)
 ) -> Token:
     """
     OAuth2 compatible token login, get an access token for future requests.
