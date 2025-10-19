@@ -1,5 +1,5 @@
 from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.core import security
@@ -22,20 +22,29 @@ def get_db() -> Generator:
 
 
 def get_current_user(
+    request: Request,
     db: Session = Depends(get_db),
     token: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)
 ) -> User:
-    """Get current authenticated user"""
+    """Get current authenticated user - checks cookies first, then Authorization header"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    if token is None:
+    # Try to get token from cookie first
+    token_str = request.cookies.get("access_token")
+    
+    # Fall back to Authorization header
+    if not token_str and token:
+        token_str = token.credentials
+    
+    if not token_str:
         raise credentials_exception
+    
     try:
-        payload = security.verify_token(token.credentials)
+        payload = security.verify_token(token_str)
         if payload is None:
             raise credentials_exception
         
@@ -173,15 +182,23 @@ def check_hse_expert_access(
 
 
 def get_optional_current_user(
+    request: Request,
     db: Session = Depends(get_db),
     token: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)
 ) -> Optional[User]:
     """Get current user if token is provided, otherwise return None"""
-    if not token:
+    # Try to get token from cookie first
+    token_str = request.cookies.get("access_token")
+    
+    # Fall back to Authorization header
+    if not token_str and token:
+        token_str = token.credentials
+    
+    if not token_str:
         return None
     
     try:
-        payload = security.verify_token(token.credentials)
+        payload = security.verify_token(token_str)
         if payload is None:
             return None
         
