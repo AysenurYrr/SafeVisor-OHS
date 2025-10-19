@@ -36,11 +36,15 @@ def stream_demo_video(
     from app.crud import user as _crud_user
 
     token_value: Optional[str] = None
-    if token_header and getattr(token_header, "credentials", None):
+    # Try cookie first (for HttpOnly cookie auth)
+    token_value = request.cookies.get("access_token")
+    # Fall back to Authorization header
+    if not token_value and token_header and getattr(token_header, "credentials", None):
         token_value = token_header.credentials
-    elif token_q:
+    # Fall back to query parameters (for video streaming in browsers)
+    elif not token_value and token_q:
         token_value = token_q
-    elif token_alt:
+    elif not token_value and token_alt:
         token_value = token_alt
 
     if not token_value:
@@ -251,9 +255,13 @@ def stream_camera_video(
     from app.crud import user as _crud_user
 
     token_value: Optional[str] = None
-    if token_header and getattr(token_header, "credentials", None):
+    # Try cookie first (for HttpOnly cookie auth)
+    token_value = request.cookies.get("access_token")
+    # Fall back to Authorization header
+    if not token_value and token_header and getattr(token_header, "credentials", None):
         token_value = token_header.credentials
-    elif token_q:
+    # Fall back to query parameter (for video streaming in browsers)
+    elif not token_value and token_q:
         token_value = token_q
     if not token_value:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
