@@ -133,8 +133,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(auth.router, prefix="/auth", tags=["authentication"])
-app.include_router(auth.router, prefix="/api/v1/users", tags=["users-auth"])
+# Unified authentication and user management under /api/v1/users
+app.include_router(auth.router, prefix="/api/v1/users", tags=["authentication"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(employees.router, prefix="/api/v1/employees", tags=["employees"])
 app.include_router(departments.router, prefix="/api/v1/departments", tags=["departments"])

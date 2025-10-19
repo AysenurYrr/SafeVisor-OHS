@@ -56,7 +56,7 @@ api.interceptors.response.use(
       
       try {
         // Try to refresh the token (uses refresh_token cookie)
-        await api.post('/auth/refresh')
+        await api.post('/api/v1/users/refresh')
         
         // Retry original request with new token cookie
         return api(originalRequest)
@@ -78,25 +78,25 @@ export const AuthAPI = {
     const form = new URLSearchParams()
     form.append('username', email)
     form.append('password', password)
-    const response = await api.post('/auth/login', form, {
+    const response = await api.post('/api/v1/users/login', form, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
     })
     return response.data
   },
 
   async getCurrentUser() {
-    const response = await api.get('/auth/me')
+    const response = await api.get('/api/v1/users/me')
     return response.data
   },
 
   async logout() {
-    const response = await api.post('/auth/logout')
+    const response = await api.post('/api/v1/users/logout')
     return response.data
   },
 
   async refreshToken(refreshToken) {
     // Backend now reads refresh_token from cookie
-    const response = await api.post('/auth/refresh')
+    const response = await api.post('/api/v1/users/refresh')
     return response.data
   }
 }
