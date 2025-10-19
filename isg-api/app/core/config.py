@@ -10,9 +10,6 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     DESCRIPTION: str = "Occupational Safety Management System API"
     
-    # Environment
-    ENVIRONMENT: str = "development"  # development, staging, production
-    
     # Database
     DATABASE_URL: str = "postgresql://isg_user:isg_password@localhost/isg_db"
     
@@ -40,21 +37,10 @@ class Settings(BaseSettings):
     # Security
     BCRYPT_SCHEMES: list[str] = ["argon2", "bcrypt"]
     BCRYPT_DEPRECATED: str = "auto"
-    USE_HTTPS: bool = False  # Set to True in production
-    COOKIE_SECURE: bool = False  # Set to True in production (requires HTTPS)
-    COOKIE_SAMESITE: str = "lax"  # lax, strict, or none
-    COOKIE_DOMAIN: str = None  # Set to your domain in production
-    
-    # Rate Limiting
-    RATE_LIMIT_ENABLED: bool = True
-    LOGIN_RATE_LIMIT: str = "5/minute"  # 5 login attempts per minute per IP
     
     # File upload
     MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
     UPLOAD_DIR: str = "uploads"
-    ALLOWED_UPLOAD_EXTENSIONS: list[str] = Field(
-        default_factory=lambda: [".jpg", ".jpeg", ".png", ".gif", ".bmp"]
-    )
     
     # Admin user (for initial setup)
     FIRST_SUPERUSER_EMAIL: str = "admin@isg.com"

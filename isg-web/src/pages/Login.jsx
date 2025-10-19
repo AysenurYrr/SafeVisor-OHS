@@ -3,14 +3,14 @@ import { useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export default function Login() {
-  const { login, user } = useAuth()
+  const { login, token } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('admin@isg.local')
+  const [password, setPassword] = useState('password')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  if (user) return <Navigate to="/dashboard" replace />
+  if (token) return <Navigate to="/dashboard" replace />
 
   const onSubmit = async (e) => {
     e.preventDefault()
@@ -20,16 +20,17 @@ export default function Login() {
       await login({ email, password })
       navigate('/dashboard', { replace: true })
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed. Please check your credentials.')
+      setError('Login failed')
     } finally {
       setLoading(false)
     }
   }
 
   const demoUsers = [
-    { email: 'admin@isg.com', role: 'Admin (IT)' },
-    { email: 'manager@isg.com', role: 'Manager' },
-    { email: 'hse@isg.com', role: 'HSE Expert' },
+    { email: 'admin@isg.local', role: 'Admin (IT)' },
+    { email: 'manager@isg.local', role: 'Manager' },
+    { email: 'assistant@isg.local', role: 'Assistant Manager' },
+    { email: 'hse@isg.local', role: 'HSE Expert' },
   ]
 
   return (
@@ -63,7 +64,6 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)} 
               required 
               placeholder="Enter your email"
-              autoComplete="email"
             />
           </div>
           
@@ -76,7 +76,6 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)} 
               required 
               placeholder="Enter your password"
-              autoComplete="current-password"
             />
           </div>
           
@@ -113,7 +112,7 @@ export default function Login() {
           ))}
         </div>
         <p className="text-xs text-blue-700 mt-3">
-          Click any email above to auto-fill. Contact your administrator for credentials.
+          Click any email above to auto-fill. Default password: "password"
         </p>
       </div>
     </div>
