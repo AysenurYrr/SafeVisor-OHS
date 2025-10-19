@@ -39,6 +39,15 @@ class ViolationBase(BaseModel):
     video_url: Optional[str] = None
     confidence_score: int = 0
     bbox_coordinates: Optional[str] = None
+    
+    # Evidence images
+    evidence_start_image: Optional[str] = None
+    evidence_middle_image: Optional[str] = None
+    evidence_end_image: Optional[str] = None
+    
+    # Tracking fields
+    person_tracker_id: Optional[int] = None
+    duration_frames: Optional[int] = None
 
 
 class ViolationCreate(ViolationBase):
@@ -62,6 +71,15 @@ class ViolationInDB(ViolationBase):
     notification_sent: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
+    
+    # Evidence images
+    evidence_start_image: Optional[str] = None
+    evidence_middle_image: Optional[str] = None
+    evidence_end_image: Optional[str] = None
+    
+    # Tracking fields
+    person_tracker_id: Optional[int] = None
+    duration_frames: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -77,6 +95,15 @@ class ViolationResponse(ViolationBase):
     notification_sent: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
+    
+    # Evidence images
+    evidence_start_image: Optional[str] = None
+    evidence_middle_image: Optional[str] = None
+    evidence_end_image: Optional[str] = None
+    
+    # Tracking fields
+    person_tracker_id: Optional[int] = None
+    duration_frames: Optional[int] = None
 
     class Config:
         from_attributes = True

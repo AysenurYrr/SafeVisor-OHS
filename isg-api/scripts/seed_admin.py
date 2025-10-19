@@ -11,6 +11,7 @@ from app.db.session import SessionLocal, engine  # type: ignore
 from app.db.base import Base  # type: ignore  # imports all models via base
 from app.models.role import Role  # type: ignore
 from app.models.user import User  # type: ignore
+from app.models.camera import Camera  # type: ignore
 from app.core.security import get_password_hash  # type: ignore
 
 
@@ -55,8 +56,76 @@ def main():
             print("[SUCCESS] Admin user created: admin@isg.com / admin123")
         else:
             print("[INFO] Admin user already exists or Admin role missing.")
+        
+        # Seed demo cameras if admin exists
+        if admin or db.query(User).filter(User.email == "admin@isg.com").first():
+            seed_cameras(db)
     finally:
         db.close()
+
+
+def seed_cameras(db):
+    """Seed demo cameras that correspond to demo video files"""
+    admin = db.query(User).filter(User.email == "admin@isg.com").first()
+    if not admin:
+        print("[WARNING] Cannot seed cameras - admin user not found")
+        return
+    
+    # Define demo cameras
+    cameras_data = [
+        {
+            "id": 1,
+            "name": "Camera-1",
+            "location": "Main Floor - Factory Area 1",
+            "stream_url": "/api/v1/cameras/1/stream",
+            "camera_type": "demo",
+            "description": "Demo camera streaming demo.mp4",
+        },
+        {
+            "id": 2,
+            "name": "Camera-2",
+            "location": "Assembly Line - Factory Area 2",
+            "stream_url": "/api/v1/cameras/2/stream",
+            "camera_type": "demo",
+            "description": "Demo camera streaming demo2.mp4",
+        },
+        {
+            "id": 3,
+            "name": "Camera-3",
+            "location": "Storage Area - Factory Area 3",
+            "stream_url": "/api/v1/cameras/3/stream",
+            "camera_type": "demo",
+            "description": "Demo camera streaming demo3.mp4",
+        },
+    ]
+    
+    created_count = 0
+    for data in cameras_data:
+        camera = db.query(Camera).filter(Camera.name == data["name"]).first()
+        if not camera:
+            camera = Camera(
+                id=data["id"],
+                name=data["name"],
+                location=data["location"],
+                stream_url=data["stream_url"],
+                camera_type=data["camera_type"],
+                description=data["description"],
+                resolution="1920x1080",
+                fps=30,
+                is_active=True,
+                is_recording=False,
+                detection_enabled=True,
+                ppe_detection=True,
+                pose_detection=True,
+                face_recognition=True,
+                created_by=admin.id,
+            )
+            db.add(camera)
+            created_count += 1
+    
+    if created_count > 0:
+        db.commit()
+        print(f"[SUCCESS] Created {created_count} demo camera(s)")
 
 
 if __name__ == "__main__":

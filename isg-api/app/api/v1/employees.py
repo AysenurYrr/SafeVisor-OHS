@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form, BackgroundTasks
 import os
+import uuid
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.crud import employee as crud_employee
@@ -17,6 +18,7 @@ from app.models.department import Department
 from app.models.position import Position
 from app.services.face_embedding_service import generate_employee_embedding
 from app.services.face_embedding_service import facenet_available as embeddings_facenet_available
+from app.core.file_validation import validate_image_file, sanitize_filename
 
 router = APIRouter()
 
@@ -121,6 +123,11 @@ def create_employee(
             raise HTTPException(status_code=422, detail="Invalid email format")
 
     _validate_email(email)
+
+    # Validate photo files
+    validate_image_file(photo_front)
+    validate_image_file(photo_left)
+    validate_image_file(photo_right)
 
     # Validate that all 3 photos are provided
     if not photo_front or not photo_left or not photo_right:
@@ -295,6 +302,14 @@ def update_employee(
             status_code=404,
             detail="Employee not found"
         )
+    
+    # Validate photo files if provided
+    if photo_front:
+        validate_image_file(photo_front)
+    if photo_left:
+        validate_image_file(photo_left)
+    if photo_right:
+        validate_image_file(photo_right)
     
     # Build update dict from form data
     update_data = {}
@@ -708,22 +723,41 @@ def save_employee_photos_required(db: Session, employee: Employee, photo_front: 
     Stores them in /app/static/employees/{employee_id}/ and updates the database paths.
     """
     # Directory: app/static/employees/{employee_id}
-    base_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static", "employees", str(employee.id))
+    static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+    base_dir = os.path.join(static_root, "employees", str(employee.id))
     base_dir = os.path.abspath(base_dir)
     os.makedirs(base_dir, exist_ok=True)
     
     # Helper to save a photo and return its URL path
     def save_photo(upload_file: UploadFile, photo_type: str) -> str:
-        ext = os.path.splitext(upload_file.filename or "")[1] or ".jpg"
-        filename = f"{photo_type}{ext}"
+        # Sanitize the filename to prevent path traversal
+        original_ext = os.path.splitext(upload_file.filename or "")[1] or ".jpg"
+        safe_ext = sanitize_filename(original_ext).lower()
+        if not safe_ext.startswith('.'):
+            safe_ext = '.' + safe_ext
+        filename = f"{photo_type}_{uuid.uuid4().hex[:8]}{safe_ext}"
         destination = os.path.join(base_dir, filename)
         
-        # Write file
+        # Ensure destination is within base_dir (prevent path traversal)
+        destination = os.path.abspath(destination)
+        if not destination.startswith(base_dir):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        
+        # Clear any existing file tracked for this slot to avoid cache collisions
+        existing_rel = getattr(employee, f"photo_{photo_type}_path", None)
+        if existing_rel and existing_rel.startswith('/static/'):
+            existing_abs = os.path.join(static_root, existing_rel[len('/static/'):].lstrip('/'))
+            if os.path.exists(existing_abs):
+                try:
+                    os.remove(existing_abs)
+                except Exception:
+                    pass
+
         with open(destination, "wb") as out:
             out.write(upload_file.file.read())
         
         # Return URL path (relative to /static)
-        rel_path = os.path.relpath(destination, os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+        rel_path = os.path.relpath(destination, static_root)
         return f"/static/{rel_path.replace(os.sep, '/')}"
     
     # Save each photo and update employee record
@@ -739,29 +773,41 @@ def update_employee_photos(db: Session, employee: Employee, photo_front: Optiona
     Update employee photos. Only updates the photos that are provided.
     """
     # Directory: app/static/employees/{employee_id}
-    base_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static", "employees", str(employee.id))
+    static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+    base_dir = os.path.join(static_root, "employees", str(employee.id))
     base_dir = os.path.abspath(base_dir)
     os.makedirs(base_dir, exist_ok=True)
     
     # Helper to save a photo and return its URL path
     def save_photo(upload_file: UploadFile, photo_type: str) -> str:
-        ext = os.path.splitext(upload_file.filename or "")[1] or ".jpg"
-        filename = f"{photo_type}{ext}"
+        # Sanitize the filename to prevent path traversal
+        original_ext = os.path.splitext(upload_file.filename or "")[1] or ".jpg"
+        safe_ext = sanitize_filename(original_ext).lower()
+        if not safe_ext.startswith('.'):
+            safe_ext = '.' + safe_ext
+        filename = f"{photo_type}_{uuid.uuid4().hex[:8]}{safe_ext}"
         destination = os.path.join(base_dir, filename)
-        
-        # Delete old file if exists
-        if os.path.exists(destination):
-            try:
-                os.remove(destination)
-            except Exception:
-                pass
-        
-        # Write new file
+
+        # Ensure destination is within base_dir (prevent path traversal)
+        destination = os.path.abspath(destination)
+        if not destination.startswith(base_dir):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+
+        # Remove previously stored file for this slot so the path always points to the fresh upload
+        existing_rel = getattr(employee, f"photo_{photo_type}_path", None)
+        if existing_rel and existing_rel.startswith('/static/'):
+            existing_abs = os.path.join(static_root, existing_rel[len('/static/'):].lstrip('/'))
+            if os.path.exists(existing_abs):
+                try:
+                    os.remove(existing_abs)
+                except Exception:
+                    pass
+
         with open(destination, "wb") as out:
             out.write(upload_file.file.read())
         
         # Return URL path (relative to /static)
-        rel_path = os.path.relpath(destination, os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+        rel_path = os.path.relpath(destination, static_root)
         return f"/static/{rel_path.replace(os.sep, '/')}"
     
     # Update only the photos that were provided

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # We'll use 0.8 (previous value) and make it adjustable via env FACE_MATCH_THRESHOLD.
 import os
 try:
-    FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.8"))
+    FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.9"))
 except ValueError:  # pragma: no cover
     FACE_MATCH_THRESHOLD = 0.8
 
