@@ -6,12 +6,12 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   console.log('💡 VITE build mode:', mode);
-  console.log('💡 VITE_API_URL:', env.VITE_API_URL);
+  console.log('💡 VITE_API_BASE_URL:', env.VITE_API_BASE_URL);
 
   return {
     plugins: [react()],
     define: {
-      'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL),
+      'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL),
     },
   };
 });
