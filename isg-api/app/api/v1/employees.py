@@ -160,35 +160,24 @@ def create_employee(
         notes=notes,
     )
 
-    # Create employee and save photos atomically
+    # Create employee and save photos atomically (don't commit until both succeed)
     try:
+        # Create employee (don't commit yet)
         employee = crud_employee.create_employee(
             db=db, employee=emp_create, created_by=current_user.id
         )
-
-        # Update with FK fields if provided
-        # Already set in create payload; ensure commit reflects FKs
+        # Don't commit yet - keep employee in pending state
+        db.flush()  # Assign ID but don't commit
+        
+        # Save the 3 required photos to filesystem and update paths in employee object
+        # This function should NOT commit internally
+        save_employee_photos_required_no_commit(db, employee, photo_front, photo_left, photo_right)
+        
+        # Now commit everything atomically
         db.commit()
         db.refresh(employee)
 
-        # Save the 3 required photos - if this fails, rollback the employee creation
-        try:
-            save_employee_photos_required(db, employee, photo_front, photo_left, photo_right)
-        except Exception as photo_error:
-            # Rollback the employee creation if photo save fails
-            db.rollback()
-            # Delete the employee record to maintain atomicity
-            db.delete(employee)
-            db.commit()
-            raise HTTPException(
-                status_code=400,
-                detail=f"Failed to save employee photos: {str(photo_error)}"
-            )
-
-        # Refresh to get updated photo paths
-        db.refresh(employee)
-
-        # Log employee creation
+        # Log employee creation (after successful commit)
         crud_employee_log.log_employee_action(
             db=db,
             employee_id=employee.id,
@@ -196,14 +185,24 @@ def create_employee(
             actor_id=current_user.id,
             details={"employee_id": employee.employee_id, "name": f"{first_name} {last_name}"}
         )
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
     except Exception as e:
-        # Rollback on any other error
+        # Rollback everything on any error
         db.rollback()
+        # Clean up any uploaded files if they were saved before the error
+        try:
+            static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
+            employee_dir = os.path.join(static_root, "employees", str(getattr(employee, 'id', 'tmp')))
+            if os.path.exists(employee_dir):
+                import shutil
+                shutil.rmtree(employee_dir)
+        except Exception:
+            pass  # Ignore cleanup errors
+        
+        # Re-raise as HTTPException with appropriate message
+        if isinstance(e, HTTPException):
+            raise
         raise HTTPException(
-            status_code=500,
+            status_code=400,
             detail=f"Failed to create employee: {str(e)}"
         )
 
@@ -745,6 +744,16 @@ def save_employee_photos_required(db: Session, employee: Employee, photo_front: 
     Save the 3 required photos for an employee.
     Stores them in /app/static/employees/{employee_id}/ and updates the database paths.
     """
+    save_employee_photos_required_no_commit(db, employee, photo_front, photo_left, photo_right)
+    db.commit()
+
+
+def save_employee_photos_required_no_commit(db: Session, employee: Employee, photo_front: UploadFile, photo_left: UploadFile, photo_right: UploadFile):
+    """
+    Save the 3 required photos for an employee WITHOUT committing.
+    Stores them in /app/static/employees/{employee_id}/ and updates the database paths.
+    Used when the caller wants to control the transaction commit.
+    """
     # Directory: app/static/employees/{employee_id}
     static_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "static"))
     base_dir = os.path.join(static_root, "employees", str(employee.id))
@@ -783,12 +792,10 @@ def save_employee_photos_required(db: Session, employee: Employee, photo_front: 
         rel_path = os.path.relpath(destination, static_root)
         return f"/static/{rel_path.replace(os.sep, '/')}"
     
-    # Save each photo and update employee record
+    # Save each photo and update employee record (but don't commit)
     employee.photo_front_path = save_photo(photo_front, "front")
     employee.photo_left_path = save_photo(photo_left, "left")
     employee.photo_right_path = save_photo(photo_right, "right")
-    
-    db.commit()
 
 
 def update_employee_photos(db: Session, employee: Employee, photo_front: Optional[UploadFile], photo_left: Optional[UploadFile], photo_right: Optional[UploadFile]):
