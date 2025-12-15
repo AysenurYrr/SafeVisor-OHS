@@ -33,7 +33,7 @@ class Violation(Base):
     __tablename__ = "violations"
 
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
     camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=False)
     violation_type = Column(Enum(ViolationType), nullable=False)
     severity = Column(Enum(ViolationSeverity), default=ViolationSeverity.MEDIUM)

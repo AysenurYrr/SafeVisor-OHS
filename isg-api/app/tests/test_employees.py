@@ -232,3 +232,114 @@ def test_employee_model_uuid_generation():
     assert emp.uuid is not None
     assert isinstance(emp.uuid, str)  # String UUID for SQLite
     assert len(emp.uuid) == 36
+
+
+def test_delete_employee_with_violations(client):
+    """Test deleting an employee that has associated violations and pose alerts"""
+    token = get_auth_token(client)
+    if not token:
+        pytest.skip("Could not get auth token")
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Create a test employee
+    db = TestingSessionLocal()
+    try:
+        from app.models.violation import Violation, ViolationType, ViolationSeverity
+        from app.models.pose_alert import PoseAlert, PoseType, AlertSeverity
+        from app.models.camera import Camera
+        from app.models.factory_area import FactoryArea
+        from datetime import date
+        
+        # Get admin user
+        admin = db.query(User).filter(User.email == "admin@example.com").first()
+        
+        # Create factory area for camera
+        factory_area = FactoryArea(
+            name="Test Area",
+            description="Test area for camera",
+            is_active=True,
+            created_by=admin.id
+        )
+        db.add(factory_area)
+        db.commit()
+        db.refresh(factory_area)
+        
+        # Create a camera
+        camera = Camera(
+            name="Test Camera",
+            factory_area_id=factory_area.id,
+            is_active=True,
+            created_by=admin.id
+        )
+        db.add(camera)
+        db.commit()
+        db.refresh(camera)
+        
+        # Create test employee
+        test_emp_uuid = str(uuid.uuid4())
+        test_employee = Employee(
+            uuid=test_emp_uuid,
+            employee_id=f"EMP-{uuid.uuid4().hex[:8]}",
+            first_name="Delete",
+            last_name="Test",
+            email=f"delete.test.{uuid.uuid4().hex[:8]}@example.com",
+            hire_date=date.today(),
+            created_by=admin.id
+        )
+        db.add(test_employee)
+        db.commit()
+        db.refresh(test_employee)
+        
+        # Create a violation linked to this employee
+        violation = Violation(
+            employee_id=test_employee.id,
+            camera_id=camera.id,
+            violation_type=ViolationType.NO_HELMET,
+            severity=ViolationSeverity.HIGH,
+            confidence_score=95
+        )
+        db.add(violation)
+        
+        # Create a pose alert linked to this employee
+        pose_alert = PoseAlert(
+            employee_id=test_employee.id,
+            camera_id=camera.id,
+            pose_type=PoseType.UNSAFE_LIFTING,
+            severity=AlertSeverity.MEDIUM,
+            confidence_score=0.85
+        )
+        db.add(pose_alert)
+        db.commit()
+        
+        violation_id = violation.id
+        pose_alert_id = pose_alert.id
+        
+    finally:
+        db.close()
+    
+    # Now try to delete the employee via API
+    response = client.delete(f"/api/v1/employees/{test_emp_uuid}", headers=headers)
+    
+    # Should succeed (200 OK)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["deleted"] is True
+    assert data["employee_uuid"] == test_emp_uuid
+    
+    # Verify the employee is deleted
+    response = client.get(f"/api/v1/employees/{test_emp_uuid}", headers=headers)
+    assert response.status_code == 404
+    
+    # Verify violations and pose_alerts still exist but have employee_id set to NULL
+    db = TestingSessionLocal()
+    try:
+        violation = db.query(Violation).filter(Violation.id == violation_id).first()
+        assert violation is not None
+        assert violation.employee_id is None  # Should be set to NULL
+        
+        pose_alert = db.query(PoseAlert).filter(PoseAlert.id == pose_alert_id).first()
+        assert pose_alert is not None
+        assert pose_alert.employee_id is None  # Should be set to NULL
+    finally:
+        db.close()
