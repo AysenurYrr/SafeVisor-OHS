@@ -48,13 +48,7 @@ Added test `test_delete_employee_with_violations` that:
 
 ## Deployment Steps
 
-### Step 1: Backup Database (CRITICAL)
-```bash
-# Before applying migration, create a database backup
-docker exec isgdb pg_dump -U your_db_user isg_db > backup_$(date +%Y%m%d_%H%M%S).sql
-```
-
-### Step 2: Apply Migration
+### Step 1: Apply Migration
 ```bash
 # Navigate to API directory
 cd isg-api
@@ -70,7 +64,7 @@ alembic current
 # Should show: 74ac3d76478e (head)
 ```
 
-### Step 3: Verify Database Changes
+### Step 2: Verify Database Changes
 ```sql
 -- Connect to PostgreSQL
 docker exec -it isgdb psql -U your_db_user -d isg_db
@@ -84,7 +78,7 @@ docker exec -it isgdb psql -U your_db_user -d isg_db
 -- Look for: pose_alerts_employee_id_fkey with ON DELETE SET NULL
 ```
 
-### Step 4: Test the Fix
+### Step 3: Test the Fix
 
 #### Option A: Using the API
 ```bash
@@ -126,7 +120,7 @@ SELECT * FROM violations WHERE employee_id IS NULL;
 -- Should see the violation record with employee_id = NULL
 ```
 
-### Step 5: Monitor Logs
+### Step 4: Monitor Logs
 ```bash
 # Check API logs for any errors
 docker logs isg-api --tail 100 -f
@@ -152,7 +146,6 @@ alembic current
 
 ## Verification Checklist
 
-- [ ] Database backup created
 - [ ] Migration applied successfully (`alembic upgrade head`)
 - [ ] Migration version confirmed (`alembic current` shows 74ac3d76478e)
 - [ ] FK constraints verified in database (`\d violations` and `\d pose_alerts`)
@@ -193,7 +186,6 @@ If you encounter issues:
 2. Check database logs: `docker logs isgdb`
 3. Verify migration status: `alembic current`
 4. Check FK constraints: `\d violations` and `\d pose_alerts` in psql
-5. Restore from backup if needed
 
 ## Additional Notes
 
