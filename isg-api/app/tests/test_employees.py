@@ -232,3 +232,175 @@ def test_employee_model_uuid_generation():
     assert emp.uuid is not None
     assert isinstance(emp.uuid, str)  # String UUID for SQLite
     assert len(emp.uuid) == 36
+
+
+def test_delete_employee_with_violations(client):
+    """Test that deleting an employee with violations works correctly"""
+    token = get_auth_token(client)
+    if not token:
+        pytest.skip("Could not get auth token")
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    db = TestingSessionLocal()
+    
+    try:
+        # Import required models
+        from app.models.violation import Violation, ViolationType, ViolationSeverity
+        from app.models.camera import Camera
+        from datetime import date
+        
+        # Create a test camera
+        test_camera = Camera(
+            name="Test Camera Delete",
+            camera_url="rtsp://test-delete.example.com",
+            location="Test Location Delete",
+            is_active=True,
+            created_by=1
+        )
+        db.add(test_camera)
+        db.commit()
+        db.refresh(test_camera)
+        
+        # Create a test employee
+        test_employee = Employee(
+            uuid=str(uuid.uuid4()),
+            employee_id="EMP_DELETE_001",
+            first_name="Delete",
+            last_name="Test",
+            email="delete.test@example.com",
+            hire_date=date.today(),
+            created_by=1
+        )
+        db.add(test_employee)
+        db.commit()
+        db.refresh(test_employee)
+        
+        # Create a violation for this employee
+        test_violation = Violation(
+            employee_id=test_employee.id,
+            camera_id=test_camera.id,
+            violation_type=ViolationType.NO_HELMET,
+            severity=ViolationSeverity.HIGH,
+            confidence_score=95
+        )
+        db.add(test_violation)
+        db.commit()
+        db.refresh(test_violation)
+        
+        employee_uuid = test_employee.uuid
+        violation_id = test_violation.id
+        
+        # Delete the employee via API
+        response = client.delete(f"/api/v1/employees/{employee_uuid}", headers=headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["deleted"] is True
+        assert data["employee_uuid"] == employee_uuid
+        
+        # Verify employee is deleted
+        db.expire_all()  # Clear session cache
+        deleted_employee = db.query(Employee).filter(Employee.uuid == employee_uuid).first()
+        assert deleted_employee is None
+        
+        # Verify violation still exists but employee_id is set to NULL
+        violation_after = db.query(Violation).filter(Violation.id == violation_id).first()
+        assert violation_after is not None
+        assert violation_after.employee_id is None  # Should be NULL after deletion
+        
+    finally:
+        db.close()
+
+
+def test_delete_employee_with_pose_alerts(client):
+    """Test that deleting an employee with pose alerts works correctly"""
+    token = get_auth_token(client)
+    if not token:
+        pytest.skip("Could not get auth token")
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    db = TestingSessionLocal()
+    
+    try:
+        # Import required models
+        from app.models.pose_alert import PoseAlert, PoseType, AlertSeverity
+        from app.models.camera import Camera
+        from datetime import date
+        
+        # Create a test camera
+        test_camera = Camera(
+            name="Test Camera Pose",
+            camera_url="rtsp://test-pose.example.com",
+            location="Test Location Pose",
+            is_active=True,
+            created_by=1
+        )
+        db.add(test_camera)
+        db.commit()
+        db.refresh(test_camera)
+        
+        # Create a test employee
+        test_employee = Employee(
+            uuid=str(uuid.uuid4()),
+            employee_id="EMP_POSE_001",
+            first_name="Pose",
+            last_name="Test",
+            email="pose.test@example.com",
+            hire_date=date.today(),
+            created_by=1
+        )
+        db.add(test_employee)
+        db.commit()
+        db.refresh(test_employee)
+        
+        # Create a pose alert for this employee
+        test_alert = PoseAlert(
+            employee_id=test_employee.id,
+            camera_id=test_camera.id,
+            pose_type=PoseType.UNSAFE_LIFTING,
+            severity=AlertSeverity.HIGH,
+            confidence_score=0.92
+        )
+        db.add(test_alert)
+        db.commit()
+        db.refresh(test_alert)
+        
+        employee_uuid = test_employee.uuid
+        alert_id = test_alert.id
+        
+        # Delete the employee via API
+        response = client.delete(f"/api/v1/employees/{employee_uuid}", headers=headers)
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert data["deleted"] is True
+        assert data["employee_uuid"] == employee_uuid
+        
+        # Verify employee is deleted
+        db.expire_all()  # Clear session cache
+        deleted_employee = db.query(Employee).filter(Employee.uuid == employee_uuid).first()
+        assert deleted_employee is None
+        
+        # Verify pose alert still exists but employee_id is set to NULL
+        alert_after = db.query(PoseAlert).filter(PoseAlert.id == alert_id).first()
+        assert alert_after is not None
+        assert alert_after.employee_id is None  # Should be NULL after deletion
+        
+    finally:
+        db.close()
+
+
+def test_delete_employee_not_found(client):
+    """Test deleting a non-existent employee returns 404"""
+    token = get_auth_token(client)
+    if not token:
+        pytest.skip("Could not get auth token")
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    non_existent_uuid = str(uuid.uuid4())
+    
+    response = client.delete(f"/api/v1/employees/{non_existent_uuid}", headers=headers)
+    assert response.status_code == 404
+    
+    data = response.json()
+    assert "not found" in data["detail"].lower()
