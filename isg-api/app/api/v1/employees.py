@@ -160,29 +160,52 @@ def create_employee(
         notes=notes,
     )
 
-    employee = crud_employee.create_employee(
-        db=db, employee=emp_create, created_by=current_user.id
-    )
+    # Create employee and save photos atomically
+    try:
+        employee = crud_employee.create_employee(
+            db=db, employee=emp_create, created_by=current_user.id
+        )
 
-    # Update with FK fields if provided
-    # Already set in create payload; ensure commit reflects FKs
-    db.commit()
-    db.refresh(employee)
+        # Update with FK fields if provided
+        # Already set in create payload; ensure commit reflects FKs
+        db.commit()
+        db.refresh(employee)
 
-    # Save the 3 required photos
-    save_employee_photos_required(db, employee, photo_front, photo_left, photo_right)
+        # Save the 3 required photos - if this fails, rollback the employee creation
+        try:
+            save_employee_photos_required(db, employee, photo_front, photo_left, photo_right)
+        except Exception as photo_error:
+            # Rollback the employee creation if photo save fails
+            db.rollback()
+            # Delete the employee record to maintain atomicity
+            db.delete(employee)
+            db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to save employee photos: {str(photo_error)}"
+            )
 
-    # Refresh to get updated photo paths
-    db.refresh(employee)
+        # Refresh to get updated photo paths
+        db.refresh(employee)
 
-    # Log employee creation
-    crud_employee_log.log_employee_action(
-        db=db,
-        employee_id=employee.id,
-        action="created",
-        actor_id=current_user.id,
-        details={"employee_id": employee.employee_id, "name": f"{first_name} {last_name}"}
-    )
+        # Log employee creation
+        crud_employee_log.log_employee_action(
+            db=db,
+            employee_id=employee.id,
+            action="created",
+            actor_id=current_user.id,
+            details={"employee_id": employee.employee_id, "name": f"{first_name} {last_name}"}
+        )
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        # Rollback on any other error
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create employee: {str(e)}"
+        )
 
     # Queue background embedding generation (non-blocking)
     def _bg_embed(emp_id: int):  # pragma: no cover (background task side-effects)
