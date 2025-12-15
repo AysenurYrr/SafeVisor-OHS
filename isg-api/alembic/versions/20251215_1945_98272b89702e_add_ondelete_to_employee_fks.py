@@ -21,11 +21,20 @@ def upgrade() -> None:
     
     This allows employees to be deleted even when they have related violations or pose_alerts.
     The employee_id will be set to NULL in those records when the employee is deleted.
+    
+    Note: This migration assumes PostgreSQL's default naming convention for foreign key constraints:
+    {table}_{column}_fkey. If your database uses different constraint names, you may need to
+    adjust the constraint names in the drop_constraint calls below.
+    
+    To check your constraint names in PostgreSQL, run:
+    SELECT conname FROM pg_constraint WHERE conrelid = 'violations'::regclass;
+    SELECT conname FROM pg_constraint WHERE conrelid = 'pose_alerts'::regclass;
     """
     # For PostgreSQL, we need to drop and recreate the foreign key constraints
     # with the ondelete clause
     
     # Update violations table
+    # PostgreSQL standard FK constraint name: violations_employee_id_fkey
     with op.batch_alter_table('violations', schema=None) as batch_op:
         # Drop existing foreign key constraint
         batch_op.drop_constraint('violations_employee_id_fkey', type_='foreignkey')
@@ -39,6 +48,7 @@ def upgrade() -> None:
         )
     
     # Update pose_alerts table
+    # PostgreSQL standard FK constraint name: pose_alerts_employee_id_fkey
     with op.batch_alter_table('pose_alerts', schema=None) as batch_op:
         # Drop existing foreign key constraint
         batch_op.drop_constraint('pose_alerts_employee_id_fkey', type_='foreignkey')

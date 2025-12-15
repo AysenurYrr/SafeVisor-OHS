@@ -1,6 +1,7 @@
 import pytest
 import uuid
 import os
+from datetime import date
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -12,6 +13,9 @@ from app.models.role import Role
 from app.models.employee import Employee
 from app.models.department import Department
 from app.models.position import Position
+from app.models.violation import Violation, ViolationType, ViolationSeverity
+from app.models.pose_alert import PoseAlert, PoseType, AlertSeverity
+from app.models.camera import Camera
 from app.core import security
 
 # Test database URL (use SQLite for testing)
@@ -244,11 +248,6 @@ def test_delete_employee_with_violations(client):
     db = TestingSessionLocal()
     
     try:
-        # Import required models
-        from app.models.violation import Violation, ViolationType, ViolationSeverity
-        from app.models.camera import Camera
-        from datetime import date
-        
         # Create a test camera
         test_camera = Camera(
             name="Test Camera Delete",
@@ -276,12 +275,13 @@ def test_delete_employee_with_violations(client):
         db.refresh(test_employee)
         
         # Create a violation for this employee
+        # Note: Violations use 0-100 scale for confidence_score (integer)
         test_violation = Violation(
             employee_id=test_employee.id,
             camera_id=test_camera.id,
             violation_type=ViolationType.NO_HELMET,
             severity=ViolationSeverity.HIGH,
-            confidence_score=95
+            confidence_score=95  # Integer 0-100 scale
         )
         db.add(test_violation)
         db.commit()
@@ -322,11 +322,6 @@ def test_delete_employee_with_pose_alerts(client):
     db = TestingSessionLocal()
     
     try:
-        # Import required models
-        from app.models.pose_alert import PoseAlert, PoseType, AlertSeverity
-        from app.models.camera import Camera
-        from datetime import date
-        
         # Create a test camera
         test_camera = Camera(
             name="Test Camera Pose",
@@ -354,12 +349,13 @@ def test_delete_employee_with_pose_alerts(client):
         db.refresh(test_employee)
         
         # Create a pose alert for this employee
+        # Note: PoseAlerts use 0.0-1.0 scale for confidence_score (float)
         test_alert = PoseAlert(
             employee_id=test_employee.id,
             camera_id=test_camera.id,
             pose_type=PoseType.UNSAFE_LIFTING,
             severity=AlertSeverity.HIGH,
-            confidence_score=0.92
+            confidence_score=0.92  # Float 0.0-1.0 scale
         )
         db.add(test_alert)
         db.commit()

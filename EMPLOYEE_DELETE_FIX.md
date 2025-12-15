@@ -139,6 +139,32 @@ Run tests:
 pytest app/tests/test_employees.py -v
 ```
 
+## Troubleshooting
+
+### Migration Fails with "Constraint Not Found"
+
+If the migration fails with an error like `constraint "violations_employee_id_fkey" does not exist`, your database may use different constraint names. 
+
+**To check your constraint names in PostgreSQL:**
+```sql
+-- Check violations table constraints
+SELECT conname 
+FROM pg_constraint 
+WHERE conrelid = 'violations'::regclass 
+  AND confrelid = 'employees'::regclass;
+
+-- Check pose_alerts table constraints
+SELECT conname 
+FROM pg_constraint 
+WHERE conrelid = 'pose_alerts'::regclass 
+  AND confrelid = 'employees'::regclass;
+```
+
+**If constraint names differ:**
+1. Edit the migration file: `isg-api/alembic/versions/20251215_1945_98272b89702e_add_ondelete_to_employee_fks.py`
+2. Replace `violations_employee_id_fkey` and `pose_alerts_employee_id_fkey` with the actual constraint names from your database
+3. Re-run the migration
+
 ## Verification
 
 After applying the migration, you can verify it works by:
