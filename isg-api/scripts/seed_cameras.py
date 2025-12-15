@@ -29,7 +29,7 @@ def main():
             {
                 "name": "Camera-1",
                 "location": "Main Floor - Factory Area 1",
-                "stream_url": "/api/v1/cameras/1/stream",
+                "stream_url": "api/v1/cameras/1/stream",
                 "camera_type": "demo",
                 "description": "Demo camera streaming demo.mp4",
                 "resolution": "1920x1080",
@@ -44,7 +44,7 @@ def main():
             {
                 "name": "Camera-2",
                 "location": "Assembly Line - Factory Area 2",
-                "stream_url": "/api/v1/cameras/2/stream",
+                "stream_url": "api/v1/cameras/2/stream",
                 "camera_type": "demo",
                 "description": "Demo camera streaming demo2.mp4",
                 "resolution": "1920x1080",
@@ -59,7 +59,7 @@ def main():
             {
                 "name": "Camera-3",
                 "location": "Storage Area - Factory Area 3",
-                "stream_url": "/api/v1/cameras/3/stream",
+                "stream_url": "api/v1/cameras/3/stream",
                 "camera_type": "demo",
                 "description": "Demo camera streaming demo3.mp4",
                 "resolution": "1920x1080",
