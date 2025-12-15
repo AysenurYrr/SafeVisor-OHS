@@ -29,7 +29,7 @@ isg-api/.env.development
 isg-api/.env.staging
 isg-api/.env.local
 isg-api/.env.*.local
-
+isg-api/cookies.txt
 # Testing & coverage
 coverage/
 

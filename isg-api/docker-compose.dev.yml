@@ -1,39 +1,18 @@
 services:
-  # Development overrides for the API service
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: isg-api
-    restart: unless-stopped
-    environment:
-      - DATABASE_URL=postgresql://isg:devpass@db:5432/isgdb
-      - SECRET_KEY=your-super-secret-jwt-key-change-in-production
-      - ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=30
-      - REFRESH_TOKEN_EXPIRE_DAYS=7
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     volumes:
-      # Mount only necessary paths to avoid permission issues with pgdata
       - ./app:/app/app
       - ./app/static:/app/app/static
       - ./alembic.ini:/app/alembic.ini
       - ./alembic:/app/alembic
       - ./requirements.txt:/app/requirements.txt
       - ./README.md:/app/README.md
-    networks:
-      - isg-network
-    depends_on:
-      db:
-        condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app
 
-  # Development database with exposed port
   db:
     ports:
       - "5432:5432"
-    environment:
-      - POSTGRES_USER=isg
-      - POSTGRES_PASSWORD=devpass
-      - POSTGRES_DB=isgdb
