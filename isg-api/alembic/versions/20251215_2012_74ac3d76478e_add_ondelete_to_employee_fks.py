@@ -1,7 +1,7 @@
 """Add ondelete to employee FKs in violations and pose_alerts
 
 Revision ID: 74ac3d76478e
-Revises: 52a6eeb34476
+Revises: 2fa606699dab
 Create Date: 2025-12-15 20:12:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '74ac3d76478e'
-down_revision = '52a6eeb34476'
+down_revision = '2fa606699dab'
 branch_labels = None
 depends_on = None
 
