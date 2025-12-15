@@ -32,7 +32,7 @@ class PoseAlert(Base):
     __tablename__ = "pose_alerts"
 
     id = Column(Integer, primary_key=True, index=True)
-    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
     camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=False)
     pose_type = Column(Enum(PoseType), nullable=False)
     severity = Column(Enum(AlertSeverity), default=AlertSeverity.MEDIUM)
