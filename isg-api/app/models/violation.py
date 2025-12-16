@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Enum
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, Enum, Float, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 from app.db.session import Base
+from app.models.safety_rule import SafetyRuleType
 
 
 class ViolationType(enum.Enum):
@@ -35,7 +36,9 @@ class Violation(Base):
     id = Column(Integer, primary_key=True, index=True)
     employee_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
     camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=False)
+    factory_area_id = Column(Integer, ForeignKey("factory_areas.id", ondelete="SET NULL"), nullable=True)
     violation_type = Column(Enum(ViolationType), nullable=False)
+    rule_type = Column(Enum(SafetyRuleType), nullable=True)
     severity = Column(Enum(ViolationSeverity), default=ViolationSeverity.MEDIUM)
     status = Column(Enum(ViolationStatus), default=ViolationStatus.OPEN)
     description = Column(Text, nullable=True)
@@ -43,6 +46,11 @@ class Violation(Base):
     video_url = Column(String(500), nullable=True)
     confidence_score = Column(Integer, nullable=False, default=0)  # 0-100
     bbox_coordinates = Column(Text, nullable=True)  # JSON string
+    occurred_at = Column(DateTime(timezone=True), server_default=func.now())
+    snapshot_path = Column(String(500), nullable=True)
+    track_id = Column(Integer, nullable=True)
+    model_confidence = Column(Float, nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
     
     # Evidence images (start, middle, end frames)
     evidence_start_image = Column(String(500), nullable=True)
@@ -65,3 +73,12 @@ class Violation(Base):
     # Relationships
     employee = relationship("Employee", back_populates="violations", lazy="select")
     camera = relationship("Camera", back_populates="violations", lazy="select")
+    factory_area = relationship("FactoryArea", back_populates="violations", lazy="select", uselist=False)
+
+    @property
+    def metadata(self):
+        return self.extra_metadata
+
+    @metadata.setter
+    def metadata(self, value):
+        self.extra_metadata = value

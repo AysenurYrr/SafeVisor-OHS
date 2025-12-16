@@ -3,7 +3,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, text
 from app.models.factory_area import FactoryArea, area_rules
 from app.models.camera import Camera
+from app.models.safety_rule import SafetyRule, SafetyRuleType
 from app.schemas.factory_area import FactoryAreaCreate, FactoryAreaUpdate
+from app.schemas.safety_rule import SafetyRuleCreate
+from app.crud import safety_rule as crud_safety_rule
 
 
 def get_factory_area(db: Session, area_id: int) -> Optional[FactoryArea]:
@@ -61,7 +64,12 @@ def count_factory_areas(
 
 
 def get_area_safety_rules(db: Session, area_id: int) -> List[str]:
-    """Get safety rules for a factory area"""
+    """Get safety rules for a factory area (fall back to legacy table if needed)."""
+    rules = crud_safety_rule.get_rules(db, factory_area_id=area_id)
+    if rules:
+        return [r.rule_type.value for r in rules if r.enabled]
+
+    # Legacy fallback
     result = db.execute(
         text("SELECT rule_name FROM area_rules WHERE area_id = :area_id"),
         {"area_id": area_id}
@@ -94,12 +102,29 @@ def create_factory_area(
             camera.factory_area_id = db_area.id
     
     # Add safety rules
-    if area.safety_rules:
+    if area.rule_configs:
+        for rule_cfg in area.rule_configs:
+            payload = SafetyRuleCreate(**rule_cfg.model_dump(), factory_area_id=db_area.id)
+            crud_safety_rule.upsert_rule(db, payload)
+    elif area.safety_rules:
+        # Backwards compatible defaults
         for rule in area.safety_rules:
             db.execute(
                 text("INSERT INTO area_rules (area_id, rule_name) VALUES (:area_id, :rule_name)"),
                 {"area_id": db_area.id, "rule_name": rule}
             )
+            try:
+                payload = SafetyRuleCreate(
+                    rule_type=SafetyRuleType(rule),
+                    factory_area_id=db_area.id,
+                    min_duration_sec=10,
+                    cooldown_sec=60,
+                    confidence_threshold=0.5,
+                )
+                crud_safety_rule.upsert_rule(db, payload)
+            except Exception:
+                # Rule may not map to enum; keep legacy value only
+                pass
     
     db.commit()
     db.refresh(db_area)
@@ -116,7 +141,7 @@ def update_factory_area(
     if not db_area:
         return None
     
-    update_data = area_update.model_dump(exclude_unset=True, exclude={'camera_ids', 'safety_rules'})
+    update_data = area_update.model_dump(exclude_unset=True, exclude={'camera_ids', 'safety_rules', 'rule_configs'})
     
     # Update basic fields
     for field, value in update_data.items():
@@ -139,18 +164,36 @@ def update_factory_area(
                 camera.factory_area_id = area_id
     
     # Update safety rules if provided
-    if area_update.safety_rules is not None:
-        # Remove existing rules
+    if area_update.rule_configs is not None:
+        db.query(SafetyRule).filter(
+            SafetyRule.factory_area_id == area_id,
+            SafetyRule.camera_id == None,
+        ).delete()
+        for rule_cfg in area_update.rule_configs:
+            payload = SafetyRuleCreate(**rule_cfg.model_dump(), factory_area_id=area_id)
+            crud_safety_rule.upsert_rule(db, payload)
+    elif area_update.safety_rules is not None:
+        # Legacy payload support
         db.execute(
             text("DELETE FROM area_rules WHERE area_id = :area_id"),
             {"area_id": area_id}
         )
-        # Add new rules
         for rule in area_update.safety_rules:
             db.execute(
                 text("INSERT INTO area_rules (area_id, rule_name) VALUES (:area_id, :rule_name)"),
                 {"area_id": area_id, "rule_name": rule}
             )
+            try:
+                payload = SafetyRuleCreate(
+                    rule_type=SafetyRuleType(rule),
+                    factory_area_id=area_id,
+                    min_duration_sec=10,
+                    cooldown_sec=60,
+                    confidence_threshold=0.5,
+                )
+                crud_safety_rule.upsert_rule(db, payload)
+            except Exception:
+                pass
     
     db.commit()
     db.refresh(db_area)

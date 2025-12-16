@@ -1,7 +1,9 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime
 from enum import Enum
+
+from app.models.safety_rule import SafetyRuleType
 
 
 class ViolationTypeEnum(str, Enum):
@@ -31,7 +33,9 @@ class ViolationStatusEnum(str, Enum):
 class ViolationBase(BaseModel):
     employee_id: Optional[int] = None
     camera_id: int
+    factory_area_id: Optional[int] = None
     violation_type: ViolationTypeEnum
+    rule_type: Optional[SafetyRuleType] = None
     severity: ViolationSeverityEnum = ViolationSeverityEnum.MEDIUM
     status: ViolationStatusEnum = ViolationStatusEnum.OPEN
     description: Optional[str] = None
@@ -39,6 +43,11 @@ class ViolationBase(BaseModel):
     video_url: Optional[str] = None
     confidence_score: int = 0
     bbox_coordinates: Optional[str] = None
+    occurred_at: Optional[datetime] = None
+    snapshot_path: Optional[str] = None
+    track_id: Optional[int] = None
+    model_confidence: Optional[float] = None
+    metadata: Optional[dict[str, Any]] = None
     
     # Evidence images
     evidence_start_image: Optional[str] = None
@@ -59,6 +68,7 @@ class ViolationUpdate(BaseModel):
     severity: Optional[ViolationSeverityEnum] = None
     description: Optional[str] = None
     resolution_notes: Optional[str] = None
+    occurred_at: Optional[datetime] = None
 
 
 class ViolationInDB(ViolationBase):
@@ -95,6 +105,7 @@ class ViolationResponse(ViolationBase):
     notification_sent: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
+    snapshot_url: Optional[str] = None
     
     # Evidence images
     evidence_start_image: Optional[str] = None
@@ -121,4 +132,5 @@ class ViolationStats(BaseModel):
     open_violations: int
     resolved_violations: int
     by_type: dict[str, int]
+    by_rule: dict[str, int] | None = None
     by_severity: dict[str, int]

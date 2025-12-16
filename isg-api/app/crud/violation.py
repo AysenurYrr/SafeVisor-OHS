@@ -3,6 +3,7 @@ from datetime import datetime, date
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from app.models.violation import Violation, ViolationStatus, ViolationType, ViolationSeverity
+from app.models.safety_rule import SafetyRuleType
 from app.schemas.violation import ViolationCreate, ViolationUpdate
 
 
@@ -17,7 +18,9 @@ def get_violations(
     limit: int = 100,
     employee_id: Optional[int] = None,
     camera_id: Optional[int] = None,
+    factory_area_id: Optional[int] = None,
     violation_type: Optional[ViolationType] = None,
+    rule_type: Optional[SafetyRuleType] = None,
     severity: Optional[ViolationSeverity] = None,
     status: Optional[ViolationStatus] = None,
     start_date: Optional[date] = None,
@@ -31,9 +34,15 @@ def get_violations(
     
     if camera_id:
         query = query.filter(Violation.camera_id == camera_id)
+
+    if factory_area_id:
+        query = query.filter(Violation.factory_area_id == factory_area_id)
     
     if violation_type:
         query = query.filter(Violation.violation_type == violation_type)
+
+    if rule_type:
+        query = query.filter(Violation.rule_type == rule_type)
     
     if severity:
         query = query.filter(Violation.severity == severity)
@@ -47,14 +56,24 @@ def get_violations(
     if end_date:
         query = query.filter(func.date(Violation.created_at) <= end_date)
     
-    return query.order_by(Violation.created_at.desc()).offset(skip).limit(limit).all()
+    return (
+        query.order_by(
+            func.coalesce(Violation.occurred_at, Violation.created_at).desc(),
+            Violation.created_at.desc(),
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
 def count_violations(
     db: Session,
     employee_id: Optional[int] = None,
     camera_id: Optional[int] = None,
+    factory_area_id: Optional[int] = None,
     violation_type: Optional[ViolationType] = None,
+    rule_type: Optional[SafetyRuleType] = None,
     severity: Optional[ViolationSeverity] = None,
     status: Optional[ViolationStatus] = None,
     start_date: Optional[date] = None,
@@ -68,9 +87,15 @@ def count_violations(
     
     if camera_id:
         query = query.filter(Violation.camera_id == camera_id)
+
+    if factory_area_id:
+        query = query.filter(Violation.factory_area_id == factory_area_id)
     
     if violation_type:
         query = query.filter(Violation.violation_type == violation_type)
+
+    if rule_type:
+        query = query.filter(Violation.rule_type == rule_type)
     
     if severity:
         query = query.filter(Violation.severity == severity)
@@ -89,17 +114,25 @@ def count_violations(
 
 def create_violation(db: Session, violation: ViolationCreate) -> Violation:
     """Create new violation"""
+    occurred_at = violation.occurred_at or datetime.utcnow()
     db_violation = Violation(
         employee_id=violation.employee_id,
         camera_id=violation.camera_id,
+        factory_area_id=violation.factory_area_id,
         violation_type=violation.violation_type,
+        rule_type=violation.rule_type,
         severity=violation.severity,
         status=violation.status,
         description=violation.description,
         image_url=violation.image_url,
         video_url=violation.video_url,
         confidence_score=violation.confidence_score,
-        bbox_coordinates=violation.bbox_coordinates
+        bbox_coordinates=violation.bbox_coordinates,
+        occurred_at=occurred_at,
+        snapshot_path=violation.snapshot_path,
+        track_id=violation.track_id,
+        model_confidence=violation.model_confidence,
+        extra_metadata=violation.metadata,
     )
     db.add(db_violation)
     db.commit()
@@ -174,6 +207,12 @@ def get_violation_stats(
         .group_by(Violation.violation_type)
         .all()
     )
+
+    rule_stats = (
+        query.with_entities(Violation.rule_type, func.count(Violation.id))
+        .group_by(Violation.rule_type)
+        .all()
+    )
     
     # Group by severity
     severity_stats = (
@@ -187,6 +226,7 @@ def get_violation_stats(
         "open_violations": open_violations,
         "resolved_violations": resolved_violations,
         "by_type": {str(vtype.value): count for vtype, count in type_stats},
+        "by_rule": {str(rtype.value): count for rtype, count in rule_stats if rtype},
         "by_severity": {str(severity.value): count for severity, count in severity_stats}
     }
 
