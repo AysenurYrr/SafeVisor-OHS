@@ -2,6 +2,8 @@ from pydantic import BaseModel, validator
 from typing import Optional, List
 from datetime import datetime
 
+from app.schemas.safety_rule import SafetyRuleCreate, SafetyRuleResponse
+
 
 # Valid safety rules that can be assigned to a factory area
 VALID_SAFETY_RULES = [
@@ -27,6 +29,7 @@ class FactoryAreaBase(BaseModel):
 class FactoryAreaCreate(FactoryAreaBase):
     camera_ids: List[int] = []
     safety_rules: List[str] = []
+    rule_configs: Optional[List[SafetyRuleCreate]] = None
     
     @validator('name')
     def validate_name(cls, v):
@@ -49,6 +52,7 @@ class FactoryAreaUpdate(BaseModel):
     is_active: Optional[bool] = None
     camera_ids: Optional[List[int]] = None
     safety_rules: Optional[List[str]] = None
+    rule_configs: Optional[List[SafetyRuleCreate]] = None
     
     @validator('safety_rules')
     def validate_safety_rules(cls, v):
@@ -74,6 +78,7 @@ class FactoryAreaResponse(FactoryAreaBase):
     id: int
     cameras: List[CameraBasicInfo] = []
     safety_rules: List[str] = []
+    rule_configs: List[SafetyRuleResponse] = []
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
