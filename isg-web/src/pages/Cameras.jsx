@@ -34,7 +34,34 @@ export default function Cameras() {
     { id: 3, name: 'Camera-3', desc: 'Demo stream 3 (demo3.mp4)' },
   ]), [])
 
-  const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream`
+  // Construct stream URL with access_token from localStorage for video element authentication
+  const getStreamUrl = useCallback((cameraId) => {
+    const baseUrl = api.defaults.baseURL
+    const streamPath = `/api/v1/cameras/${cameraId}/stream`
+    
+    // Get access token from localStorage (HttpOnly cookies can't be read by JS)
+    const accessToken = localStorage.getItem('access_token')
+    
+    console.log('[Camera Stream] Constructing URL:', {
+      baseUrl,
+      streamPath,
+      hasToken: !!accessToken,
+      tokenPreview: accessToken ? accessToken.substring(0, 20) + '...' : 'none'
+    })
+    
+    // If we have an access token, add it as query param for video authentication
+    // Video elements with crossOrigin don't send cookies automatically
+    if (accessToken) {
+      const url = `${baseUrl}${streamPath}?access_token=${encodeURIComponent(accessToken)}`
+      console.log('[Camera Stream] Final URL:', url.substring(0, 100) + '...')
+      return url
+    }
+    
+    console.log('[Camera Stream] No token found in localStorage, returning URL without auth')
+    return `${baseUrl}${streamPath}`
+  }, [])
+
+  const normalSrc = useMemo(() => getStreamUrl(selected), [selected, getStreamUrl])
 
   // Fetch camera data and factory area info
   const fetchCameraAndFactoryInfo = useCallback(async (cameraId) => {
@@ -490,7 +517,7 @@ export default function Cameras() {
               muted
               playsInline
               controls={false}
-              crossOrigin="anonymous"
+              crossOrigin="use-credentials"
               onLoadedMetadata={() => { try { videoRef.current?.play() } catch (_) {} }}
               style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block', opacity: hasDetectionFrame ? 0 : 1, transition: 'opacity 120ms ease' }}
               className="rounded"
