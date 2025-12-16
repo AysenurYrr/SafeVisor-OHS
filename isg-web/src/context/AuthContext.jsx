@@ -47,6 +47,12 @@ export function AuthProvider({ children }) {
       // Call the ISG API login endpoint - tokens are set in HttpOnly cookies
       const response = await AuthAPI.login(email, password)
       
+      // Store access token in localStorage for video streaming (cookies are HttpOnly)
+      // Video elements can't access HttpOnly cookies, so we need this for query params
+      if (response.access_token) {
+        localStorage.setItem('access_token', response.access_token)
+      }
+      
       // Get user info - the access token cookie is automatically sent
       const userData = await AuthAPI.getCurrentUser()
       setUser(userData)
@@ -71,6 +77,7 @@ export function AuthProvider({ children }) {
       setError(null)
       // Clean up any remaining localStorage items
       localStorage.removeItem('user')
+      localStorage.removeItem('access_token')
     }
   }
 
