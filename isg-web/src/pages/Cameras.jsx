@@ -34,34 +34,8 @@ export default function Cameras() {
     { id: 3, name: 'Camera-3', desc: 'Demo stream 3 (demo3.mp4)' },
   ]), [])
 
-  // Construct stream URL with access_token from localStorage for video element authentication
-  const getStreamUrl = useCallback((cameraId) => {
-    const baseUrl = api.defaults.baseURL
-    const streamPath = `/api/v1/cameras/${cameraId}/stream`
-    
-    // Get access token from localStorage (HttpOnly cookies can't be read by JS)
-    const accessToken = localStorage.getItem('access_token')
-    
-    console.log('[Camera Stream] Constructing URL:', {
-      baseUrl,
-      streamPath,
-      hasToken: !!accessToken,
-      tokenPreview: accessToken ? accessToken.substring(0, 20) + '...' : 'none'
-    })
-    
-    // If we have an access token, add it as query param for video authentication
-    // Video elements with crossOrigin don't send cookies automatically
-    if (accessToken) {
-      const url = `${baseUrl}${streamPath}?access_token=${encodeURIComponent(accessToken)}`
-      console.log('[Camera Stream] Final URL:', url.substring(0, 100) + '...')
-      return url
-    }
-    
-    console.log('[Camera Stream] No token found in localStorage, returning URL without auth')
-    return `${baseUrl}${streamPath}`
-  }, [])
-
-  const normalSrc = useMemo(() => getStreamUrl(selected), [selected, getStreamUrl])
+  // Use same-origin stream URL - cookies will be sent automatically
+  const normalSrc = useMemo(() => `/api/v1/cameras/${selected}/stream`, [selected])
 
   // Fetch camera data and factory area info
   const fetchCameraAndFactoryInfo = useCallback(async (cameraId) => {
@@ -370,6 +344,17 @@ export default function Cameras() {
       setDetectionsTick(t => t + 1)
     } catch (error) {
       console.error('[DETECTION] Frame analysis failed:', error)
+      // If it's a 401 error, stop the detection loop to prevent infinite retries
+      // The user will need to refresh the page after logging in again
+      if (error?.response?.status === 401) {
+        console.error('[DETECTION] Authentication error (401) - stopping detection loop')
+        console.log('[DETECTION] Please refresh the page after logging in')
+        // Signal to stop the loop
+        if (detectLoopRef.current) {
+          cancelAnimationFrame(detectLoopRef.current)
+          detectLoopRef.current = null
+        }
+      }
     } finally {
       processingRef.current = false
     }
@@ -517,8 +502,20 @@ export default function Cameras() {
               muted
               playsInline
               controls={false}
-              crossOrigin="use-credentials"
               onLoadedMetadata={() => { try { videoRef.current?.play() } catch (_) {} }}
+              onError={(e) => {
+                console.error('[Camera Stream] Video error:', e)
+                // Log video error details (MediaError codes 1-4, not HTTP status codes)
+                if (videoRef.current?.error) {
+                  const errorCode = videoRef.current.error.code
+                  const errorMsg = videoRef.current.error.message
+                  console.error('[Camera Stream] MediaError code:', errorCode, 'message:', errorMsg)
+                  // Code 2 (MEDIA_ERR_NETWORK) often indicates authentication or network issues
+                  if (errorCode === 2) {
+                    console.error('[Camera Stream] Network error - may be authentication related')
+                  }
+                }
+              }}
               style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block', opacity: hasDetectionFrame ? 0 : 1, transition: 'opacity 120ms ease' }}
               className="rounded"
             />
