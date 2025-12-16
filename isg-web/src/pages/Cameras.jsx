@@ -34,7 +34,31 @@ export default function Cameras() {
     { id: 3, name: 'Camera-3', desc: 'Demo stream 3 (demo3.mp4)' },
   ]), [])
 
-  const normalSrc = `${api.defaults.baseURL}/api/v1/cameras/${selected}/stream`
+  // Construct stream URL with access_token from cookie for video element authentication
+  const getStreamUrl = useCallback((cameraId) => {
+    const baseUrl = api.defaults.baseURL
+    const streamPath = `/api/v1/cameras/${cameraId}/stream`
+    
+    // Get access token from cookie for video stream authentication
+    const getCookie = (name) => {
+      const value = `; ${document.cookie}`
+      const parts = value.split(`; ${name}=`)
+      if (parts.length === 2) return parts.pop().split(';').shift()
+      return null
+    }
+    
+    const accessToken = getCookie('access_token')
+    
+    // If we have an access token, add it as query param for video authentication
+    // Video elements with crossOrigin don't send cookies automatically
+    if (accessToken) {
+      return `${baseUrl}${streamPath}?access_token=${encodeURIComponent(accessToken)}`
+    }
+    
+    return `${baseUrl}${streamPath}`
+  }, [])
+
+  const normalSrc = useMemo(() => getStreamUrl(selected), [selected, getStreamUrl])
 
   // Fetch camera data and factory area info
   const fetchCameraAndFactoryInfo = useCallback(async (cameraId) => {
@@ -490,7 +514,7 @@ export default function Cameras() {
               muted
               playsInline
               controls={false}
-              crossOrigin="anonymous"
+              crossOrigin="use-credentials"
               onLoadedMetadata={() => { try { videoRef.current?.play() } catch (_) {} }}
               style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block', opacity: hasDetectionFrame ? 0 : 1, transition: 'opacity 120ms ease' }}
               className="rounded"

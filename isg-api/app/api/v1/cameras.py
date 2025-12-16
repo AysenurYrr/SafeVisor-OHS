@@ -246,6 +246,7 @@ def stream_camera_video(
     range: Optional[str] = Header(default=None, alias="Range"),
     token_header: Optional[HTTPAuthorizationCredentials] = Depends(deps.security_scheme),
     token_q: Optional[str] = Query(default=None, alias="token"),
+    token_alt: Optional[str] = Query(default=None, alias="access_token"),
     db: Session = Depends(deps.get_db),
 ):
     """
@@ -265,9 +266,11 @@ def stream_camera_video(
         # Fall back to Authorization header
         if not token_value and token_header and getattr(token_header, "credentials", None):
             token_value = token_header.credentials
-        # Fall back to query parameter (for video streaming in browsers)
+        # Fall back to query parameters (for video streaming in browsers)
         elif not token_value and token_q:
             token_value = token_q
+        elif not token_value and token_alt:
+            token_value = token_alt
         if not token_value:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing credentials")
         try:
