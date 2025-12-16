@@ -345,8 +345,10 @@ export default function Cameras() {
     } catch (error) {
       console.error('[DETECTION] Frame analysis failed:', error)
       // If it's a 401 error, stop the detection loop to prevent infinite retries
+      // The user will need to refresh the page after logging in again
       if (error?.response?.status === 401) {
         console.error('[DETECTION] Authentication error (401) - stopping detection loop')
+        console.log('[DETECTION] Please refresh the page after logging in')
         // Signal to stop the loop
         if (detectLoopRef.current) {
           cancelAnimationFrame(detectLoopRef.current)
@@ -503,9 +505,15 @@ export default function Cameras() {
               onLoadedMetadata={() => { try { videoRef.current?.play() } catch (_) {} }}
               onError={(e) => {
                 console.error('[Camera Stream] Video error:', e)
-                // Check if it's a 401 error by looking at the video error code
+                // Log video error details (MediaError codes 1-4, not HTTP status codes)
                 if (videoRef.current?.error) {
-                  console.error('[Camera Stream] Video error code:', videoRef.current.error.code, videoRef.current.error.message)
+                  const errorCode = videoRef.current.error.code
+                  const errorMsg = videoRef.current.error.message
+                  console.error('[Camera Stream] MediaError code:', errorCode, 'message:', errorMsg)
+                  // Code 2 (MEDIA_ERR_NETWORK) often indicates authentication or network issues
+                  if (errorCode === 2) {
+                    console.error('[Camera Stream] Network error - may be authentication related')
+                  }
                 }
               }}
               style={{ width: '100%', maxHeight: 540, background: '#000', display: 'block', opacity: hasDetectionFrame ? 0 : 1, transition: 'opacity 120ms ease' }}
