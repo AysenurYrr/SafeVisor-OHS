@@ -24,13 +24,16 @@ export default function Violations() {
         // Normalize to UI-friendly shape expected by the table
         const normalized = list.map((v) => ({
           id: v.id,
-          employee: v.employee_name || v.employee || (v.employee_id != null ? `#${v.employee_id}` : '-'),
-          camera: v.camera_name || v.camera || (v.camera_id != null ? `#${v.camera_id}` : '-'),
+          employee: v.employee_name || v.employee || (v.employee_id != null ? `Employee #${v.employee_id}` : 'Unknown'),
+          camera: v.camera_name || v.camera || (v.camera_id != null ? `Camera #${v.camera_id}` : '-'),
           date: v.created_at ? new Date(v.created_at).toLocaleDateString() : v.date || '-',
+          datetime: v.occurred_at || v.created_at,
           type: v.violation_type || v.desc || '-',
           desc: v.description || v.desc || '-',
           severity: v.severity || 'medium',
-          status: v.status || 'unresolved'
+          status: v.status || 'open',
+          snapshot: v.evidence_middle_image || v.image_url || null,
+          factory_area: v.factory_area_name || '-'
         }))
         setRows(normalized)
       } catch (e) {
@@ -94,15 +97,36 @@ export default function Violations() {
 
   const columns = [
     { 
+      header: 'Snapshot', 
+      accessor: 'snapshot',
+      cell: (row) => (
+        row.snapshot ? (
+          <img 
+            src={row.snapshot} 
+            alt="Violation snapshot" 
+            className="w-16 h-16 object-cover rounded cursor-pointer hover:opacity-80"
+            onClick={() => window.open(row.snapshot, '_blank')}
+            onError={(e) => { e.target.style.display = 'none' }}
+          />
+        ) : (
+          <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
+            <Icon name="cameras" className="w-6 h-6 text-gray-400" />
+          </div>
+        )
+      )
+    },
+    { 
       header: 'Employee', 
       accessor: 'employee',
       icon: 'person',
       cell: (row) => (
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-warning-100 rounded-full flex items-center justify-center">
-            <Icon name="person" className="w-5 h-5 text-warning-600" />
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${row.employee === 'Unknown' ? 'bg-gray-100' : 'bg-warning-100'}`}>
+            <Icon name="person" className={`w-5 h-5 ${row.employee === 'Unknown' ? 'text-gray-500' : 'text-warning-600'}`} />
           </div>
-          <span className="font-medium">{row.employee}</span>
+          <span className={`font-medium ${row.employee === 'Unknown' ? 'text-gray-500 italic' : ''}`}>
+            {row.employee}
+          </span>
         </div>
       )
     },
@@ -118,15 +142,32 @@ export default function Violations() {
       )
     },
     { 
-      header: 'Date', 
-      accessor: 'date',
-      icon: 'calendar'
+      header: 'Factory Area', 
+      accessor: 'factory_area',
+      cell: (row) => (
+        <span className="text-sm">{row.factory_area}</span>
+      )
+    },
+    { 
+      header: 'Date/Time', 
+      accessor: 'datetime',
+      icon: 'calendar',
+      cell: (row) => (
+        <div className="text-sm">
+          <div>{row.date}</div>
+          {row.datetime && (
+            <div className="text-xs text-gray-500">
+              {new Date(row.datetime).toLocaleTimeString()}
+            </div>
+          )}
+        </div>
+      )
     },
     { 
       header: 'Violation Type', 
       accessor: 'type',
       cell: (row) => (
-        <span className="badge-warning">{row.type}</span>
+        <span className="badge-warning">{row.type.replace(/_/g, ' ')}</span>
       )
     },
     { 

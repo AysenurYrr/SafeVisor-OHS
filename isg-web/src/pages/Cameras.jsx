@@ -28,6 +28,10 @@ export default function Cameras() {
   const [cameraData, setCameraData] = useState(null)
   const [loadingFactoryInfo, setLoadingFactoryInfo] = useState(false)
   
+  // Violation tracking state
+  // Map of person_id -> rule_type -> {startTime, frameCount, lastViolationTime}
+  const violationTrackingRef = useRef({})
+  
   const cameras = useMemo(() => ([
     { id: 1, name: 'Camera-1', desc: 'Demo stream 1 (demo.mp4)' },
     { id: 2, name: 'Camera-2', desc: 'Demo stream 2 (demo2.mp4)' },
@@ -108,6 +112,123 @@ export default function Cameras() {
     
     return () => clearInterval(timer) // Cleanup on unmount or when `selected` changes
   }, [selected])
+
+  // Check for violations with debounce logic
+  const checkViolationsWithDebounce = useCallback(async (trackedPersons, requiredPPE, currentTime) => {
+    if (!trackedPersons || !requiredPPE || requiredPPE.length === 0) {
+      return
+    }
+
+    const VIOLATION_THRESHOLD_MS = 10000 // 10 seconds
+    const COOLDOWN_MS = 60000 // 60 seconds
+
+    for (const person of trackedPersons) {
+      const personId = person.person_id || 'unknown'
+      const ppeStatus = person.ppe_status || {}
+
+      // Initialize tracking for this person if needed
+      if (!violationTrackingRef.current[personId]) {
+        violationTrackingRef.current[personId] = {}
+      }
+
+      // Check each required PPE item
+      for (const ruleType of requiredPPE) {
+        const hasPPE = ppeStatus[ruleType] === true
+        const trackKey = `${personId}_${ruleType}`
+
+        if (!violationTrackingRef.current[personId][ruleType]) {
+          violationTrackingRef.current[personId][ruleType] = {
+            startTime: null,
+            frameCount: 0,
+            lastViolationTime: 0
+          }
+        }
+
+        const tracking = violationTrackingRef.current[personId][ruleType]
+
+        if (!hasPPE) {
+          // PPE is missing
+          if (tracking.startTime === null) {
+            // Start tracking violation
+            tracking.startTime = currentTime
+            tracking.frameCount = 1
+          } else {
+            // Continue tracking
+            tracking.frameCount++
+            const violationDuration = currentTime - tracking.startTime
+
+            // Check if we've crossed the threshold and cooldown has passed
+            if (violationDuration >= VIOLATION_THRESHOLD_MS) {
+              const timeSinceLastViolation = currentTime - tracking.lastViolationTime
+
+              if (timeSinceLastViolation >= COOLDOWN_MS) {
+                // Trigger violation!
+                console.log(`[VIOLATION] Triggering violation for person ${personId}, rule: ${ruleType}`)
+                
+                // Capture snapshot from canvas
+                try {
+                  const canvas = overlayRef.current || captureCanvasRef.current
+                  if (canvas) {
+                    canvas.toBlob(async (blob) => {
+                      if (blob) {
+                        // Create FormData for multipart upload
+                        const formData = new FormData()
+                        formData.append('camera_id', selected)
+                        formData.append('factory_area_id', cameraData?.factory_area_id || '')
+                        formData.append('employee_id', person.employee_id || '')
+                        formData.append('rule_type', ruleType)
+                        formData.append('violation_type', `no_${ruleType}`)
+                        formData.append('occurred_at', new Date().toISOString())
+                        formData.append('confidence_score', 85)
+                        formData.append('person_tracker_id', personId)
+                        formData.append('duration_frames', tracking.frameCount)
+                        formData.append('snapshot', blob, `violation_${Date.now()}.jpg`)
+
+                        try {
+                          const response = await api.post('/api/v1/violations/with-snapshot', formData, {
+                            headers: {
+                              'Content-Type': 'multipart/form-data'
+                            }
+                          })
+                          console.log('[VIOLATION] Created violation:', response.data)
+                          
+                          // Add to live violations display
+                          setLiveViolations(prev => [{
+                            id: response.data.id,
+                            employee_name: person.recognized_name || 'Unknown',
+                            violation_type: `no_${ruleType}`,
+                            factory_area: factoryAreaInfo?.name || 'Unknown',
+                            camera_name: cameraData?.name || `Camera ${selected}`,
+                            timestamp: new Date().toISOString(),
+                            duration_frames: tracking.frameCount,
+                            confidence_score: 85,
+                            snapshot_path: response.data.evidence_middle_image
+                          }, ...prev].slice(0, 20))
+                        } catch (error) {
+                          console.error('[VIOLATION] Failed to create violation:', error)
+                        }
+                      }
+                    }, 'image/jpeg', 0.8)
+                  }
+                } catch (error) {
+                  console.error('[VIOLATION] Failed to capture snapshot:', error)
+                }
+
+                // Update tracking
+                tracking.lastViolationTime = currentTime
+                tracking.startTime = null
+                tracking.frameCount = 0
+              }
+            }
+          }
+        } else {
+          // PPE is present, reset tracking
+          tracking.startTime = null
+          tracking.frameCount = 0
+        }
+      }
+    }
+  }, [selected, cameraData, factoryAreaInfo])
 
   const paintDetections = useCallback((ctx, detections, trackedPersons, baseWidth, baseHeight, scaleX, scaleY) => {
     if (!ctx || !baseWidth || !baseHeight) {
@@ -312,9 +433,16 @@ export default function Cameras() {
       
       // Update detections and tracked persons
       latestDetectionsRef.current = resp?.data?.detections || []
-      setTrackedPersons(resp?.data?.tracked_persons || [])
+      const newTrackedPersons = resp?.data?.tracked_persons || []
+      setTrackedPersons(newTrackedPersons)
       
-      // Update live violations if any new ones are reported
+      // Check for violations with debounce logic
+      const requiredPPE = factoryAreaInfo?.safetyRules || []
+      if (requiredPPE.length > 0 && newTrackedPersons.length > 0) {
+        await checkViolationsWithDebounce(newTrackedPersons, requiredPPE, Date.now())
+      }
+      
+      // Update live violations if any new ones are reported from backend
       if (resp?.data?.violations && resp.data.violations.length > 0) {
         setLiveViolations(prev => {
           const newViolations = [...resp.data.violations, ...prev]
@@ -358,7 +486,7 @@ export default function Cameras() {
     } finally {
       processingRef.current = false
     }
-  }, [paintDetections, selected])
+  }, [paintDetections, selected, checkViolationsWithDebounce, factoryAreaInfo])
 
   // This effect handles the entire detection lifecycle.
   useEffect(() => {
@@ -401,6 +529,7 @@ export default function Cameras() {
       frameCountRef.current = 0 // Reset frame counter
       setTrackedPersons([]) // Clear tracked persons
       setLiveViolations([]) // Clear live violations
+      violationTrackingRef.current = {} // Clear violation tracking
       const canvas = overlayRef.current
       if (canvas) {
         const ctx = canvas.getContext('2d')
