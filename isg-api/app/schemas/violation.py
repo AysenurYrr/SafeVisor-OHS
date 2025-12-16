@@ -31,6 +31,7 @@ class ViolationStatusEnum(str, Enum):
 class ViolationBase(BaseModel):
     employee_id: Optional[int] = None
     camera_id: int
+    factory_area_id: Optional[int] = None
     violation_type: ViolationTypeEnum
     severity: ViolationSeverityEnum = ViolationSeverityEnum.MEDIUM
     status: ViolationStatusEnum = ViolationStatusEnum.OPEN
@@ -39,6 +40,7 @@ class ViolationBase(BaseModel):
     video_url: Optional[str] = None
     confidence_score: int = 0
     bbox_coordinates: Optional[str] = None
+    occurred_at: Optional[datetime] = None
     
     # Evidence images
     evidence_start_image: Optional[str] = None
@@ -69,6 +71,7 @@ class ViolationInDB(ViolationBase):
     resolved_at: Optional[datetime] = None
     resolution_notes: Optional[str] = None
     notification_sent: bool = False
+    occurred_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     
@@ -93,6 +96,7 @@ class ViolationResponse(ViolationBase):
     resolved_at: Optional[datetime] = None
     resolution_notes: Optional[str] = None
     notification_sent: bool = False
+    occurred_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     

@@ -654,12 +654,15 @@ async def detect_with_tracking(
                 violation_type = ViolationType.INCOMPLETE_PPE
             
             # Create violation record
+            from datetime import datetime as dt
             violation_create = ViolationCreate(
                 camera_id=camera_id,
+                factory_area_id=camera.factory_area_id,
                 violation_type=violation_type,
                 description=violation.get('description', ''),
                 confidence_score=violation.get('confidence_score', 0),
                 bbox_coordinates=violation.get('bbox_coordinates'),
+                occurred_at=dt.utcnow(),
                 evidence_start_image=violation.get('evidence_images', {}).get('start'),
                 evidence_middle_image=violation.get('evidence_images', {}).get('middle'),
                 evidence_end_image=violation.get('evidence_images', {}).get('end'),

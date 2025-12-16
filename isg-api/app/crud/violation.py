@@ -17,6 +17,7 @@ def get_violations(
     limit: int = 100,
     employee_id: Optional[int] = None,
     camera_id: Optional[int] = None,
+    factory_area_id: Optional[int] = None,
     violation_type: Optional[ViolationType] = None,
     severity: Optional[ViolationSeverity] = None,
     status: Optional[ViolationStatus] = None,
@@ -31,6 +32,9 @@ def get_violations(
     
     if camera_id:
         query = query.filter(Violation.camera_id == camera_id)
+    
+    if factory_area_id:
+        query = query.filter(Violation.factory_area_id == factory_area_id)
     
     if violation_type:
         query = query.filter(Violation.violation_type == violation_type)
@@ -54,6 +58,7 @@ def count_violations(
     db: Session,
     employee_id: Optional[int] = None,
     camera_id: Optional[int] = None,
+    factory_area_id: Optional[int] = None,
     violation_type: Optional[ViolationType] = None,
     severity: Optional[ViolationSeverity] = None,
     status: Optional[ViolationStatus] = None,
@@ -68,6 +73,9 @@ def count_violations(
     
     if camera_id:
         query = query.filter(Violation.camera_id == camera_id)
+    
+    if factory_area_id:
+        query = query.filter(Violation.factory_area_id == factory_area_id)
     
     if violation_type:
         query = query.filter(Violation.violation_type == violation_type)
@@ -92,6 +100,7 @@ def create_violation(db: Session, violation: ViolationCreate) -> Violation:
     db_violation = Violation(
         employee_id=violation.employee_id,
         camera_id=violation.camera_id,
+        factory_area_id=violation.factory_area_id,
         violation_type=violation.violation_type,
         severity=violation.severity,
         status=violation.status,
@@ -99,7 +108,13 @@ def create_violation(db: Session, violation: ViolationCreate) -> Violation:
         image_url=violation.image_url,
         video_url=violation.video_url,
         confidence_score=violation.confidence_score,
-        bbox_coordinates=violation.bbox_coordinates
+        bbox_coordinates=violation.bbox_coordinates,
+        occurred_at=violation.occurred_at,
+        evidence_start_image=violation.evidence_start_image,
+        evidence_middle_image=violation.evidence_middle_image,
+        evidence_end_image=violation.evidence_end_image,
+        person_tracker_id=violation.person_tracker_id,
+        duration_frames=violation.duration_frames
     )
     db.add(db_violation)
     db.commit()

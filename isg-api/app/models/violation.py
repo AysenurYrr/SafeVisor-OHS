@@ -35,6 +35,7 @@ class Violation(Base):
     id = Column(Integer, primary_key=True, index=True)
     employee_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
     camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=False)
+    factory_area_id = Column(Integer, ForeignKey("factory_areas.id", ondelete="SET NULL"), nullable=True)
     violation_type = Column(Enum(ViolationType), nullable=False)
     severity = Column(Enum(ViolationSeverity), default=ViolationSeverity.MEDIUM)
     status = Column(Enum(ViolationStatus), default=ViolationStatus.OPEN)
@@ -59,9 +60,11 @@ class Violation(Base):
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     resolution_notes = Column(Text, nullable=True)
     notification_sent = Column(Boolean, default=False)
+    occurred_at = Column(DateTime(timezone=True), nullable=True)  # When violation occurred
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
     employee = relationship("Employee", back_populates="violations", lazy="select")
     camera = relationship("Camera", back_populates="violations", lazy="select")
+    factory_area = relationship("FactoryArea", back_populates="violations", lazy="select")

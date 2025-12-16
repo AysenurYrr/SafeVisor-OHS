@@ -27,3 +27,4 @@ class FactoryArea(Base):
     # Relationships
     created_by_user = relationship("User", back_populates="created_factory_areas", lazy="select")
     cameras = relationship("Camera", back_populates="factory_area", lazy="select", cascade="all")
+    violations = relationship("Violation", back_populates="factory_area", lazy="select")
