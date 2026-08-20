@@ -221,12 +221,14 @@ def get_violation_reports(
             id=violation.id,
             camera_id=violation.camera_id,
             violation_type=str(getattr(violation.violation_type, "value", violation.violation_type)),
+            rule_type=str(getattr(violation.rule_type, "value", violation.rule_type)) if getattr(violation, "rule_type", None) else None,
             description=violation.description or "",
-            timestamp=violation.created_at.isoformat(),
+            timestamp=(violation.occurred_at or violation.created_at).isoformat(),
             confidence=(violation.confidence_score or 0) / 100.0,  # Convert back to 0-1 range
             employee_id=str(violation.employee_id) if violation.employee_id is not None else None,
             resolved=(str(getattr(violation.status, "value", violation.status)) == "resolved"),
-            bbox_coordinates=bbox_data  # Include bounding box data
+            bbox_coordinates=bbox_data,  # Include bounding box data
+            snapshot_url=getattr(violation, "snapshot_path", None),
         )
         response_violations.append(response_violation)
     

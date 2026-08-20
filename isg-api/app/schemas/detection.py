@@ -23,12 +23,17 @@ class ViolationResponse(BaseModel):
     id: int = Field(..., description="Violation ID")
     camera_id: int = Field(..., description="Camera ID where violation occurred")
     violation_type: str = Field(..., description="Type of violation (no_helmet, no_vest, etc.)")
+    rule_type: str | None = Field(None, description="Configured rule that was violated")
     description: str = Field(..., description="Human-readable description of the violation")
     timestamp: str = Field(..., description="ISO timestamp when violation occurred")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Detection confidence")
     employee_id: Optional[str] = Field(None, description="Employee ID if identified")
     resolved: bool = Field(False, description="Whether the violation has been resolved")
     bbox_coordinates: Optional[Dict[str, int]] = Field(None, description="Bounding box coordinates {x, y, width, height}")
+    snapshot_url: Optional[str] = Field(None, description="URL for stored evidence snapshot")
+    track_id: Optional[int] = Field(None, description="Tracking identifier if available")
+    model_confidence: Optional[float] = Field(None, description="Raw model confidence reported by detector")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for the violation")
 
     class Config:
         from_attributes = True

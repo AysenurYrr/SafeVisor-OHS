@@ -29,7 +29,7 @@ const DEMO_POSE_ALERTS = [
 const isDemoMode = () => {
   return localStorage.getItem('token')?.startsWith('demo-token-')
 }
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/+$/, '')
+const API_BASE_URL = '/api'
 console.log('API URL', API_BASE_URL);
 export const api = axios.create({ 
   baseURL: API_BASE_URL,
@@ -355,6 +355,13 @@ export const EventsAPI = {
     return response.data
   },
 
+  async createViolationWithSnapshot(formData) {
+    const response = await api.post('/api/v1/violations/with-snapshot', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    return response.data
+  },
+
   async getViolationStats() {
     if (isDemoMode()) {
       return { total: 23, this_week: 8, this_month: 35 }
@@ -475,4 +482,3 @@ export const FactoryAreasAPI = {
     return response.data
   }
 }
-

@@ -20,6 +20,7 @@ try:
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
+    cv2 = None  # type: ignore
     logging.warning("OpenCV not available, using mock functionality")
 
 # Import the existing detector from the local services copy
@@ -57,6 +58,22 @@ except ImportError as e:
 
 logger = logging.getLogger(__name__)
 
+try:
+    from app.services.rule_engine import RuleEngine
+    from app.crud import safety_rule as crud_safety_rule
+    from app.crud import violation as crud_violation
+    from app.models.safety_rule import SafetyRule, SafetyRuleType
+    from app.models.violation import ViolationStatus, ViolationType, ViolationSeverity
+except Exception:
+    RuleEngine = None  # type: ignore
+    crud_safety_rule = None  # type: ignore
+    crud_violation = None  # type: ignore
+    SafetyRule = None  # type: ignore
+    SafetyRuleType = None  # type: ignore
+    ViolationStatus = None  # type: ignore
+    ViolationType = None  # type: ignore
+    ViolationSeverity = None  # type: ignore
+
 class PPEDetectorService:
     """Singleton service for PPE detection using YOLO model with temporal tracking."""
     
@@ -81,6 +98,7 @@ class PPEDetectorService:
         # Use plain assignment to avoid instance attribute annotations inside __init__
         self._detector = None  # type: ignore[assignment]
         self._model_loaded = False
+        self._rule_engine = RuleEngine() if RuleEngine else None
         
         # Temporal tracking per camera
         self._trackers: Dict[int, TemporalTracker] = {}
@@ -172,6 +190,50 @@ class PPEDetectorService:
                 self._violation_managers[camera_id].set_required_ppe(required_ppe)
         
         return self._violation_managers[camera_id]
+
+    def _fetch_rules_for_camera(self, db_session: Optional[Any], camera_id: int) -> List[SafetyRule]:
+        if not db_session or not crud_safety_rule or not SafetyRule:
+            return []
+        # Prefer camera specific rules, otherwise fall back to area rules
+        rules = crud_safety_rule.get_rules(db_session, camera_id=camera_id)
+        if rules:
+            return rules
+        # Fallback to area-level
+        try:
+            from app.models.camera import Camera
+
+            camera = db_session.query(Camera).filter(Camera.id == camera_id).first()
+            if camera and camera.factory_area_id:
+                rules = crud_safety_rule.get_rules(db_session, factory_area_id=camera.factory_area_id)
+                if rules:
+                    return rules
+        except Exception:
+            pass
+        return []
+
+    @staticmethod
+    def _class_to_rule_type(cls_name: str) -> Optional[SafetyRuleType]:
+        if not SafetyRuleType:
+            return None
+        normalized = cls_name.lower().replace("-", "").replace("_", "")
+        mapping = {
+            "helmet": SafetyRuleType.HELMET,
+            "hardhat": SafetyRuleType.HELMET,
+            "vest": SafetyRuleType.VEST,
+            "safetyvest": SafetyRuleType.VEST,
+            "gloves": SafetyRuleType.GLOVES,
+            "hand": SafetyRuleType.GLOVES,
+            "glass": SafetyRuleType.GLASSES,
+            "goggles": SafetyRuleType.GLASSES,
+            "mask": SafetyRuleType.MASK,
+            "facemask": SafetyRuleType.MASK,
+            "boots": SafetyRuleType.BOOTS,
+            "shoe": SafetyRuleType.BOOTS,
+            "safetysuit": SafetyRuleType.SUIT,
+            "faces": SafetyRuleType.FACE,
+            "face": SafetyRuleType.FACE,
+        }
+        return mapping.get(normalized)
     
     def load_factory_area_rules(self, db_session, camera_id: int) -> Tuple[str, str, List[str]]:
         """
@@ -203,7 +265,10 @@ class PPEDetectorService:
                 factory_area_name = factory_area.name if factory_area else "Unknown Area"
                 
                 # Get safety rules
-                required_ppe = get_area_safety_rules(db_session, camera.factory_area_id)
+                rule_configs = []
+                if crud_safety_rule:
+                    rule_configs = crud_safety_rule.get_rules(db_session, factory_area_id=camera.factory_area_id)
+                required_ppe = [rule.rule_type.value for rule in rule_configs if getattr(rule, "enabled", True)]
             else:
                 factory_area_name = "No Area"
                 required_ppe = []
@@ -466,6 +531,17 @@ class PPEDetectorService:
                 
                 # Detect PPE
                 detections = self.detect_ppe(frame)
+
+                # Evaluate flexible rules and persist violations with snapshots
+                try:
+                    self._evaluate_rules_for_frame(
+                        detections=detections,
+                        frame=frame,
+                        camera_id=camera_id,
+                        db_session=db_session,
+                    )
+                except Exception as rule_err:
+                    logger.error(f"Rule evaluation error: {rule_err}")
                 
                 # Analyze for violations and store in DB (every 30 frames to avoid spam)
                 if frame_count % 30 == 0 and camera_id and db_session:
@@ -544,6 +620,137 @@ class PPEDetectorService:
                 
         except Exception as e:
             logger.error(f"Failed to store violations: {e}")
+
+
+    def _evaluate_rules_for_frame(
+        self,
+        *,
+        detections: List[Dict[str, Any]],
+        frame: Any,
+        camera_id: Optional[int],
+        db_session: Optional[Any],
+    ) -> None:
+        if not camera_id or not self._rule_engine or not SafetyRuleType:
+            return
+
+        rules = self._fetch_rules_for_camera(db_session, camera_id)
+        if not rules:
+            # Provide sensible defaults if no configuration exists
+            rules = self._default_rules()
+
+        present_rules: set = set()
+        for det in detections:
+            rtype = self._class_to_rule_type(det.get("cls_name", ""))
+            if rtype:
+                present_rules.add(rtype)
+
+        now = datetime.utcnow()
+        for rule in rules:
+            if not getattr(rule, "rule_type", None):
+                continue
+            is_missing = rule.rule_type not in present_rules
+            result = self._rule_engine.update(
+                camera_id=camera_id,
+                rule=rule,
+                is_missing=is_missing,
+                track_id=None,
+                now=now,
+            )
+            if result and result.triggered:
+                snapshot_url = self._save_snapshot(frame, camera_id, rule.rule_type)
+                self._persist_rule_violation(
+                    db_session=db_session,
+                    camera_id=camera_id,
+                    rule=rule,
+                    occurred_at=result.occurred_at,
+                    snapshot_url=snapshot_url,
+                )
+
+    def _default_rules(self) -> List[SafetyRule]:
+        defaults: List[SafetyRule] = []
+        if not SafetyRuleType:
+            return defaults
+        try:
+            defaults.append(
+                SafetyRule(
+                    rule_type=SafetyRuleType.HELMET,
+                    enabled=True,
+                    min_duration_sec=10,
+                    cooldown_sec=60,
+                )
+            )
+            defaults.append(
+                SafetyRule(
+                    rule_type=SafetyRuleType.VEST,
+                    enabled=True,
+                    min_duration_sec=10,
+                    cooldown_sec=60,
+                )
+            )
+        except Exception:
+            pass
+        return defaults
+
+    def _save_snapshot(self, frame: Any, camera_id: int, rule_type: SafetyRuleType) -> Optional[str]:
+        try:
+            base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "violations", str(camera_id))
+            os.makedirs(base_dir, exist_ok=True)
+            filename = f"{int(datetime.utcnow().timestamp())}_{rule_type.value}.jpg"
+            full_path = os.path.join(base_dir, filename)
+            if CV2_AVAILABLE and cv2 is not None:
+                cv2.imwrite(full_path, frame)
+            else:
+                return None
+            return f"/static/violations/{camera_id}/{filename}"
+        except Exception as e:
+            logger.error(f"Failed to save snapshot: {e}")
+            return None
+
+    def _persist_rule_violation(
+        self,
+        *,
+        db_session: Optional[Any],
+        camera_id: int,
+        rule: SafetyRule,
+        occurred_at: datetime,
+        snapshot_url: Optional[str],
+    ) -> None:
+        if not db_session or not crud_violation or not ViolationType:
+            return
+        try:
+            from app.schemas.violation import ViolationCreate
+
+            violation_type = ViolationType.INCOMPLETE_PPE
+            if rule.rule_type == SafetyRuleType.HELMET:
+                violation_type = ViolationType.NO_HELMET
+            elif rule.rule_type == SafetyRuleType.VEST:
+                violation_type = ViolationType.NO_VEST
+            elif rule.rule_type == SafetyRuleType.GLOVES:
+                violation_type = ViolationType.NO_GLOVES
+            elif rule.rule_type == SafetyRuleType.BOOTS:
+                violation_type = ViolationType.NO_BOOTS
+            elif rule.rule_type == SafetyRuleType.MASK:
+                violation_type = ViolationType.NO_MASK
+            elif rule.rule_type == SafetyRuleType.GLASSES:
+                violation_type = ViolationType.NO_GOGGLES
+
+            violation = ViolationCreate(
+                camera_id=camera_id,
+                factory_area_id=getattr(rule, "factory_area_id", None),
+                violation_type=violation_type,
+                rule_type=rule.rule_type,
+                description=f"{rule.rule_type.value} missing",
+                occurred_at=occurred_at,
+                snapshot_path=snapshot_url,
+                status=ViolationStatus.OPEN,
+                severity=ViolationSeverity.MEDIUM,
+                confidence_score=0,
+            )
+            created = crud_violation.create_violation(db_session, violation)
+            if snapshot_url:
+                setattr(created, "snapshot_url", snapshot_url)
+        except Exception as e:
+            logger.error(f"Failed to persist rule violation: {e}")
 
 
 # Global singleton instance

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.crud import factory_area as crud_factory_area
+from app.crud import safety_rule as crud_safety_rule
 from app.models.user import User
 from app.schemas.factory_area import (
     FactoryAreaCreate,
@@ -48,6 +49,7 @@ def read_factory_areas(
     # Load safety rules for each area
     for area in areas:
         area.safety_rules = crud_factory_area.get_area_safety_rules(db, area.id)
+        area.rule_configs = crud_safety_rule.get_rules(db, factory_area_id=area.id)
     
     total = crud_factory_area.count_factory_areas(
         db=db,
@@ -102,6 +104,7 @@ def create_factory_area(
         db=db, area=area_in, created_by=current_user.id
     )
     area.safety_rules = crud_factory_area.get_area_safety_rules(db, area.id)
+    area.rule_configs = crud_safety_rule.get_rules(db, factory_area_id=area.id)
     return area
 
 
@@ -123,6 +126,7 @@ def read_factory_area(
     
     # Load safety rules
     area.safety_rules = crud_factory_area.get_area_safety_rules(db, area.id)
+    area.rule_configs = crud_safety_rule.get_rules(db, factory_area_id=area.id)
     
     return area
 
@@ -160,6 +164,7 @@ def update_factory_area(
     
     # Load safety rules
     area.safety_rules = crud_factory_area.get_area_safety_rules(db, area.id)
+    area.rule_configs = crud_safety_rule.get_rules(db, factory_area_id=area.id)
     
     return area
 
@@ -203,6 +208,7 @@ def get_active_factory_areas(
     # Load safety rules for each area
     for area in areas:
         area.safety_rules = crud_factory_area.get_area_safety_rules(db, area.id)
+        area.rule_configs = crud_safety_rule.get_rules(db, factory_area_id=area.id)
     
     return areas
 
@@ -304,4 +310,3 @@ def get_available_cameras(
         }
         for cam in available_cameras
     ]
-

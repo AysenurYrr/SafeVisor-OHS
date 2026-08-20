@@ -14,6 +14,7 @@ from app.models.employee import EmployeePhoto  # noqa
 from app.models.employee_log import EmployeeLog  # noqa
 from app.models.camera import Camera  # noqa
 from app.models.factory_area import FactoryArea  # noqa
+from app.models.safety_rule import SafetyRule  # noqa
 from app.models.detection import Detection  # noqa
 from app.models.violation import Violation  # noqa
 from app.models.pose_alert import PoseAlert  # noqa
